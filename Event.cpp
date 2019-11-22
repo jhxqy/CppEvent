@@ -89,6 +89,8 @@ void IoContext::Run(){
     dispatcher.dispatch();
 }
 
+
+#ifdef DISPATCHER_SELECT
 void Dispatcher::dispatch(){
     while (!from_time_events_list_.empty()||!time_events_list_.empty()) {
         for(auto i:from_time_events_list_){
@@ -117,4 +119,5 @@ void Dispatcher::dispatch(){
     }
     
 }
+#endif
 

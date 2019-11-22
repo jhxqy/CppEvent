@@ -14,27 +14,26 @@
 
 using namespace std;
 
-IoContext ctx;
-Timer t(ctx);
-Timer t2(ctx);
 
-void print3(){
-    cout<<"3秒间隔"<<endl;
-    t.AsyncWait(print3);
-}
-
-void print1(){
-    cout<<"1秒间隔"<<endl;
-  //  t2.AsyncWait(print1);
-}
-
+class TE{
+    Timer &t;
+    void f(){
+        cout<<"1"<<endl;
+        t.AsyncWait(std::bind(&TE::f, this));
+    }
+public:
+    TE(Timer &tt):t(tt){
+        t.AsyncWait(std::bind(&TE::f, this));
+    }
+    
+};
 
 int main(int argc, const char * argv[]) {
-    
-    t.ExpiresAfter(chrono::seconds(3));
-    t2.ExpiresAfter(chrono::seconds(1));
-    t.AsyncWait(print3);
-    t2.AsyncWait(print1);
+    IoContext ctx;
+    Timer t(ctx);
+    t.ExpiresAfter(chrono::seconds(1));
+    TE e(t);
     ctx.Run();
+   
     return 0;
 }

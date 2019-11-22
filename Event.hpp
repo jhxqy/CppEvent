@@ -17,7 +17,10 @@
 #include <queue>
 
 
-#define SELECT
+#define DISPATCHER_SELECT
+
+
+
 enum class EventBaseType{
     read,write,exception
 };
@@ -81,7 +84,7 @@ public:
     
 
 };
-#ifdef SELECT
+#ifdef DISPATCHER_SELECT
 
 class Dispatcher{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
@@ -113,10 +116,8 @@ class IoContext{
     std::vector<EventBase*> write_list_;
     std::vector<EventBase*> exception_list_;
     std::vector<TimeEvent*> time_events_list_;
-#ifdef SELECT
     Dispatcher dispatcher;
             
-#endif
 
     
 public:
