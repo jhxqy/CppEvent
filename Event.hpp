@@ -15,12 +15,12 @@
 #include <vector>
 #include <list>
 #include <queue>
-
+#include <set>
 
 #define DISPATCHER_SELECT
 
-
-
+namespace cppnet{
+namespace async{
 enum class EventBaseType{
     read,write,exception
 };
@@ -65,6 +65,9 @@ struct TimeEventCompartor{
 };
             
 
+struct TimeValCompartor{
+    bool operator()(const struct timeval &a, const struct timeval &b);
+};
 
             
 class IoContext;
@@ -88,19 +91,26 @@ public:
 
 class Dispatcher{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
-
-    std::vector<EventBase*> &from_read_list_;
-    std::vector<EventBase*> &from_write_list_;
-    std::vector<EventBase*> &from_exception_list_;
-    std::vector<TimeEvent*> &from_time_events_list_;
-    
-    std::vector<EventBase*> read_list_;
-    std::vector<EventBase*> write_list_;
-    std::vector<EventBase*> exception_list_;
+    using TimeValList=std::multiset<struct timeval,TimeValCompartor>;
+    std::vector<EventBase*> io_list_;
     TimeEventList time_events_list_;
+
     
+    
+    std::vector<TimeEvent*> &from_time_events_list_;
+    std::vector<EventBase*> &from_io_list_;
+    TimeValList time_val_list_;
+    
+    bool TimeListEmpty(){
+        return time_events_list_.empty()&&from_time_events_list_.empty();
+    }
+    bool IOListEmpty(){
+        return io_list_.empty()&&from_io_list_.empty();
+    }
 public:
-    Dispatcher(std::vector<EventBase*> &r,std::vector<EventBase*> &w,std::vector<EventBase*> &e,std::vector<TimeEvent*> &t):from_read_list_(r),from_write_list_(w),from_exception_list_(e),from_time_events_list_(t){} 
+    Dispatcher(std::vector<EventBase*> &io,std::vector<TimeEvent*> &t):from_io_list_(io),from_time_events_list_(t){
+        
+    }
     
     void dispatch();
     
@@ -112,16 +122,15 @@ public:
 
 class IoContext{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
-    std::vector<EventBase*> read_list_;
-    std::vector<EventBase*> write_list_;
-    std::vector<EventBase*> exception_list_;
+    std::vector<EventBase*> io_list_;
+
     std::vector<TimeEvent*> time_events_list_;
     Dispatcher dispatcher;
             
 
     
 public:
-    IoContext():dispatcher(read_list_,write_list_,exception_list_,time_events_list_){
+    IoContext():dispatcher(io_list_,time_events_list_){
         
     }
     void AddEvent(EventBase *e);
@@ -132,7 +141,11 @@ public:
     void Run();
 };
 
-;
+
+}
+}
+
+
 
 
 #endif /* Event_hpp */
