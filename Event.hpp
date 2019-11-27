@@ -17,7 +17,6 @@
 #include <queue>
 #include <set>
 #include <unordered_map>
-#include <unistd.h>
 
 #define DISPATCHER_SELECT
 
@@ -156,19 +155,10 @@ public:
     }
     
     void Signal(int SIG,void(*func)(int));
-    void Recover(int SIG){
-        signal(SIG,originFunc[SIG]);
-    }
-    void AddFd(int SIG,int fd){
-        fds[SIG].push_back(fd);
-    }
-    std::list<int> getFd(int SIG){
-        return fds[SIG];
-    }
-    void rmFd(int SIG){
-        
-        fds[SIG].clear();
-    }
+    void Recover(int SIG);
+    void AddFd(int SIG,int fd);
+    std::list<int> getFd(int SIG);
+    void rmFd(int SIG);
     
 };
 

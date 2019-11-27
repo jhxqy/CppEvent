@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <iostream>
+#include <signal.h>
 namespace cppnet{
 namespace async{
 TimeEvent::TimeEvent( std::function<void()> cb,struct timeval &tv):call_back(cb),time(tv){
@@ -115,8 +116,27 @@ void IoContext::AddSignalEvent(int SIG, std::function<void ()> cb){
     }));
 }
 
+void SignalMap::Recover(int SIG){
+    signal(SIG,originFunc[SIG]);
+}
+void SignalMap::AddFd(int SIG, int fd){
+    fds[SIG].push_back(fd);
+}
+std::list<int> SignalMap::getFd(int SIG){
+    return fds[SIG];
+}
+void SignalMap::rmFd(int SIG){
+    fds[SIG].clear();
+}
+
+
+
+
+
 
 #ifdef DISPATCHER_SELECT
+
+  
 void Dispatcher::dispatch(){
     while (!IOListEmpty()||!TimeListEmpty()) {
         if (!IOListEmpty()) {
@@ -145,22 +165,22 @@ void Dispatcher::dispatch(){
         fd_set write_set;
         fd_set exception_set;
 
-        __DARWIN_FD_ZERO(&read_set);
-        __DARWIN_FD_ZERO(&write_set);
-        __DARWIN_FD_ZERO(&exception_set);
+        FD_ZERO(&read_set);
+        FD_ZERO(&write_set);
+        FD_ZERO(&exception_set);
 
         int ioCnt=0;
         for(auto i:io_list_){
             ioCnt=std::max(i->fd, ioCnt);
             switch (i->event_type) {
                 case EventBaseType::write:
-                    __DARWIN_FD_SET(i->fd,&write_set);
+                    FD_SET(i->fd,&write_set);
                     break;
                 case EventBaseType::read:
-                    __DARWIN_FD_SET(i->fd,&read_set);
+                    FD_SET(i->fd,&read_set);
                     break;
                 case EventBaseType::exception:
-                    __DARWIN_FD_SET(i->fd,&read_set);
+                    FD_SET(i->fd,&read_set);
                     break;
                 default:
                     break;
@@ -193,19 +213,19 @@ void Dispatcher::dispatch(){
                 }
             }
             for(auto i=io_list_.begin();i!=io_list_.end();){
-                if ((*i)->event_type==EventBaseType::read&&__DARWIN_FD_ISSET((*i)->fd, &read_set)) {
+                if ((*i)->event_type==EventBaseType::read&&FD_ISSET((*i)->fd, &read_set)) {
                     (*i)->call_back((*i)->fd);
-                    __DARWIN_FD_CLR((*i)->fd, &read_set);
+                    FD_CLR((*i)->fd, &read_set);
                     delete (*i);
                     i=io_list_.erase(i);
-                }else if((*i)->event_type==EventBaseType::write&&__DARWIN_FD_ISSET((*i)->fd, &write_set)){
+                }else if((*i)->event_type==EventBaseType::write&&FD_ISSET((*i)->fd, &write_set)){
                     (*i)->call_back((*i)->fd);
-                    __DARWIN_FD_CLR((*i)->fd, &write_set);
+                    FD_CLR((*i)->fd, &write_set);
                     delete (*i);
                     i=io_list_.erase(i);
-                }else if((*i)->event_type==EventBaseType::exception&&__DARWIN_FD_ISSET((*i)->fd, &exception_set)){
+                }else if((*i)->event_type==EventBaseType::exception&&FD_ISSET((*i)->fd, &exception_set)){
                     (*i)->call_back((*i)->fd);
-                    __DARWIN_FD_CLR((*i)->fd, &exception_set);
+                    FD_CLR((*i)->fd, &exception_set);
                     delete (*i);
                     i=io_list_.erase(i);
                     
