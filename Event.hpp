@@ -16,13 +16,15 @@
 #include <list>
 #include <queue>
 #include <set>
+#include <unordered_map>
+#include <unistd.h>
 
 #define DISPATCHER_SELECT
 
 namespace cppnet{
 namespace async{
 enum class EventBaseType{
-    read,write,exception
+    read,write,exception,signal
 };
 
 struct EventBase{
@@ -34,6 +36,8 @@ public:
         
     }
 };
+
+
 struct TimeLimit{
     long second;  //秒
     long millisecond; //毫秒
@@ -92,13 +96,13 @@ public:
 class Dispatcher{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
     using TimeValList=std::multiset<struct timeval,TimeValCompartor>;
-    std::vector<EventBase*> io_list_;
+    std::list<EventBase*> io_list_;
     TimeEventList time_events_list_;
 
     
     
-    std::vector<TimeEvent*> &from_time_events_list_;
-    std::vector<EventBase*> &from_io_list_;
+    std::list<TimeEvent*> &from_time_events_list_;
+    std::list<EventBase*> &from_io_list_;
     TimeValList time_val_list_;
     
     bool TimeListEmpty(){
@@ -108,7 +112,7 @@ class Dispatcher{
         return io_list_.empty()&&from_io_list_.empty();
     }
 public:
-    Dispatcher(std::vector<EventBase*> &io,std::vector<TimeEvent*> &t):from_io_list_(io),from_time_events_list_(t){
+    Dispatcher(std::list<EventBase*> &io,std::list<TimeEvent*> &t):from_io_list_(io),from_time_events_list_(t){
         
     }
     
@@ -122,9 +126,9 @@ public:
 
 class IoContext{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
-    std::vector<EventBase*> io_list_;
+    std::list<EventBase*> io_list_;
 
-    std::vector<TimeEvent*> time_events_list_;
+    std::list<TimeEvent*> time_events_list_;
     Dispatcher dispatcher;
             
 
@@ -137,8 +141,35 @@ public:
     void RemoveEvent(EventBase *e);
     void AddEvent(TimeEvent *e);
     void RemoveEvent(TimeEvent *e);
-    
+    void AddSignalEvent(int SIG,std::function<void(void)>cb);
     void Run();
+};
+
+class SignalMap{
+    std::unordered_map<int,std::list<int>> fds;
+    SignalMap(){};
+    std::unordered_map<int,void(*)(int)> originFunc;
+public:
+    static SignalMap* Instance(){
+        static SignalMap m;
+        return &m;
+    }
+    
+    void Signal(int SIG,void(*func)(int));
+    void Recover(int SIG){
+        signal(SIG,originFunc[SIG]);
+    }
+    void AddFd(int SIG,int fd){
+        fds[SIG].push_back(fd);
+    }
+    std::list<int> getFd(int SIG){
+        return fds[SIG];
+    }
+    void rmFd(int SIG){
+        
+        fds[SIG].clear();
+    }
+    
 };
 
 

@@ -8,6 +8,8 @@
 
 #include "Event.hpp"
 #include <sys/time.h>
+#include <unistd.h>
+#include <iostream>
 namespace cppnet{
 namespace async{
 TimeEvent::TimeEvent( std::function<void()> cb,struct timeval &tv):call_back(cb),time(tv){
@@ -23,6 +25,13 @@ TimeEvent::TimeEvent( std::function<void()> cb,struct timeval &tv):call_back(cb)
         timelimit.millisecond%=1000;
     }
     
+}
+void SignalMap::Signal(int SIG, void (*func)(int)){
+    if(!originFunc.count(SIG)){
+        originFunc[SIG]=signal(SIG, func);
+    }else{
+        signal(SIG, func);
+    }
 }
 
 
@@ -87,6 +96,25 @@ void IoContext::Run(){
     dispatcher.dispatch();
 }
 
+void IoContext::AddSignalEvent(int SIG, std::function<void ()> cb){
+    int pfd[2];
+    pipe(pfd);
+    SignalMap::Instance()->AddFd(SIG, pfd[1]);
+    signal(SIG, [](int SIG){
+        char c=0;
+        using namespace std;
+        for(auto i:SignalMap::Instance()->getFd(SIG)){
+            write(i, &c, 1);
+        }
+        SignalMap::Instance()->rmFd(SIG);
+        SignalMap::Instance()->Recover(SIG);
+        
+    });
+    AddEvent(new EventBase(pfd[0],EventBaseType::read,[cb](int){
+        cb();
+    }));
+}
+
 
 #ifdef DISPATCHER_SELECT
 void Dispatcher::dispatch(){
@@ -139,7 +167,7 @@ void Dispatcher::dispatch(){
             }
         }
         ++ioCnt;
-        int select_result=select(ioCnt, &read_set, &write_set, &exception_set, &tv);
+        int select_result=select(ioCnt, &read_set, &write_set, &exception_set, waitTime);
         if (select_result>=0) {
             if(te!=nullptr){
                 TimeLimit ntl=TimeLimit::NowTimeLimit();
@@ -186,7 +214,7 @@ void Dispatcher::dispatch(){
                 }
             }
         }else if(select_result==-1){
-            
+            using namespace std;
         }
         
        

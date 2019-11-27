@@ -12,6 +12,7 @@
 #include "Event.hpp"
 #include <sys/select.h>
 #include <unistd.h>
+#include <signal.h>
 
 using namespace std;
 
@@ -42,18 +43,22 @@ void ReadF(int fd){
     buf[n]=0;
     cout<<"异步读入"<<buf;
    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
+}
 
-
+void S(){
+    cout<<"Control C"<<endl;
+    ctx.AddSignalEvent(SIGINT,S);
 }
 int main(int argc, const char * argv[]) {
     t.ExpiresAfter(chrono::seconds(3));
     t2.ExpiresAfter(chrono::seconds(1));
-    t3.ExpiresAfter(chrono::milliseconds(333));
+   // t3.ExpiresAfter(chrono::milliseconds(333));
     t.AsyncWait(f1);
     t2.AsyncWait(f2);
-    t3.AsyncWait(f3);
-    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
-    
+ //   t3.AsyncWait(f3);
+
+//    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
+    ctx.AddSignalEvent(SIGINT, S);
     ctx.Run();
    
     return 0;
