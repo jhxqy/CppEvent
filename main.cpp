@@ -10,7 +10,6 @@
 #include <ctime>
 #include <thread>
 #include "Event.hpp"
-#include <sys/select.h>
 #include <unistd.h>
 #include <signal.h>
 
