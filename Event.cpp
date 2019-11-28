@@ -10,10 +10,10 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <iostream>
-#include <signal.h>
+#include <csignal>
 namespace cppnet{
 namespace async{
-TimeEvent::TimeEvent( std::function<void()> cb,struct timeval &tv):call_back(cb),time(tv){
+TimeEvent::TimeEvent(const std::function<void()> &cb,struct timeval &tv):call_back(cb),time(tv){
     struct timeval now;
     
     if(gettimeofday(&now, nullptr)==-1){
@@ -206,8 +206,16 @@ void Dispatcher::dispatch(){
                     te=time_events_list_.top();
                     time_events_list_.pop();
                     time_val_list_.erase(te->time);
+
+
                     te->time.tv_sec-=tv.tv_sec;
                     te->time.tv_usec-=tv.tv_usec;
+                    if(te->time.tv_usec<0){
+                        te->time.tv_sec--;
+                        te->time.tv_usec+=1000000;
+                    }
+
+
                     time_val_list_.insert(te->time);
                     time_events_list_.push(te);
                 }

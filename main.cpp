@@ -49,15 +49,19 @@ void S(){
     ctx.AddSignalEvent(SIGINT,S);
 }
 int main(int argc, const char * argv[]) {
-    t.ExpiresAfter(chrono::seconds(3));
-    t2.ExpiresAfter(chrono::seconds(1));
-   // t3.ExpiresAfter(chrono::milliseconds(333));
+    t.ExpiresAfter(chrono::milliseconds(3000));
+    t2.ExpiresAfter(chrono::milliseconds(1000));
+    t3.ExpiresAfter(chrono::milliseconds(333));
+
+     //.ExpiresAfter(chrono::milliseconds(333));
+    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
+    ctx.AddSignalEvent(SIGINT,S);
     t.AsyncWait(f1);
     t2.AsyncWait(f2);
- //   t3.AsyncWait(f3);
+
+    t3.AsyncWait(f3);
 
 //    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
-    ctx.AddSignalEvent(SIGINT, S);
     ctx.Run();
    
     return 0;

@@ -17,8 +17,8 @@
 #include <queue>
 #include <set>
 #include <unordered_map>
-
 #define DISPATCHER_SELECT
+
 
 namespace cppnet{
 namespace async{
@@ -31,7 +31,7 @@ struct EventBase{
     int fd;
     EventBaseType event_type;
 public:
-    EventBase(int f,EventBaseType et,std::function<void(int)>cb):fd(f),event_type(et),call_back(cb){
+    EventBase(int f,EventBaseType et,const std::function<void(int)>&cb):fd(f),event_type(et),call_back(cb){
         
     }
 };
@@ -59,7 +59,7 @@ struct TimeEvent{
     struct timeval time;
     TimeLimit timelimit;
 public:
-    TimeEvent( std::function<void()> cb,struct timeval &tv);
+    TimeEvent( const std::function<void()> &cb,struct timeval &tv);
 };
 
 
