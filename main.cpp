@@ -41,7 +41,6 @@ void ReadF(int fd){
     ssize_t n=read(fd, buf, 1024);
     buf[n]=0;
     cout<<"异步读入"<<buf;
-   ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
 }
 
 void S(){
@@ -61,7 +60,7 @@ int main(int argc, const char * argv[]) {
 
     t3.AsyncWait(f3);
 
-//    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
+    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
     ctx.Run();
    
     return 0;
