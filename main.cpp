@@ -12,7 +12,8 @@
 #include "Event.hpp"
 #include <unistd.h>
 #include <signal.h>
-
+#include <string.h>
+#include <sys/epoll.h>
 using namespace std;
 
 using namespace cppnet::async;
@@ -43,26 +44,31 @@ void ReadF(int fd){
     cout<<"异步读入"<<buf;
 }
 
-void S(){
-    cout<<"Control C"<<endl;
-    ctx.AddSignalEvent(SIGINT,S);
-}
 int main(int argc, const char * argv[]) {
-    t.ExpiresAfter(chrono::milliseconds(3000));
-    t2.ExpiresAfter(chrono::milliseconds(1000));
-    t3.ExpiresAfter(chrono::milliseconds(333));
+#ifdef  __linux__
+    cout<<"linux"<<endl;
+#endif
+    int epfd=epoll_create(256);
+    struct epoll_event e;
+    memset(&e,0, sizeof(e));
+    e.events=EPOLLIN|EPOLLPRI|EPOLLET;
+    e.data.fd=fileno(stdin);
 
-     //.ExpiresAfter(chrono::milliseconds(333));
-    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
-    ctx.AddSignalEvent(SIGINT,S);
-    t.AsyncWait(f1);
-    t2.AsyncWait(f2);
+    epoll_ctl(epfd,EPOLL_CTL_ADD,fileno(stdin),&e);
+    struct epoll_event events[1024];
 
-    t3.AsyncWait(f3);
-
-    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
-    ctx.Run();
-   
+    int EN=epoll_wait(epfd,events,1024,-1);
+    for(int i=0;i<EN;i++){
+        if(events[i].events&EPOLLIN){
+            char buf[1024];
+            ssize_t len=read(events[i].data.fd,buf,1024);
+            buf[len]=0;
+            cout<<"异步读入:"<<buf;
+            epoll_ctl(epfd,EPOLL_CTL_DEL,events[i].data.fd,&events[i]);
+        }
+    }
+    EN=epoll_wait(epfd,events,1024,-1);
+    cout<<EN;
     return 0;
 }
 
