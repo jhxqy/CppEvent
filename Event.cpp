@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <iostream>
 #include <csignal>
+#include <cstring>
+
 namespace cppnet{
 namespace async{
 TimeEvent::TimeEvent(const std::function<void()> &cb,struct timeval &tv):call_back(cb),time(tv){
@@ -44,7 +46,6 @@ bool TimeEventCompartor::operator()(TimeEvent *t1, TimeEvent *t2) const {
     }else if(t1->time.tv_sec>t2->time.tv_sec){
         return true;
     }
-    
     return (t1->time.tv_usec)>(t2->time.tv_usec);
 }
 
@@ -135,8 +136,6 @@ void SignalMap::rmFd(int SIG){
 
 
 #ifdef DISPATCHER_SELECT
-
-  
 void Dispatcher::dispatch(){
     while (!IOListEmpty()||!TimeListEmpty()) {
         if (!IOListEmpty()) {
@@ -250,6 +249,48 @@ void Dispatcher::dispatch(){
     
 }
 #endif
+
+
+#ifdef DISPATCHER_EPOLL
+void Dispatcher::dispatch(){
+    struct epoll_event buf[MAXN];
+    while(!(TimeEventEmpty()&&IOEventEmpty())){
+        if(!TimeEventEmpty()){
+            TimeEvent *te=nullptr;
+            struct timeval tv;
+            struct timeval *waitTime=nullptr;
+            if(!TimeEventEmpty()){
+                for(auto i:from_time_events_list_){
+                    time_events_list_.push(i);
+                    time_val_list_.insert(i->time);
+                }
+                from_time_events_list_.clear();
+                te=time_events_list_.top();
+                tv=*time_val_list_.begin();
+                waitTime=&tv;
+            }
+            while(!io_list_.empty()){
+                struct epoll_event ee;
+                memset(&ee,0, sizeof(ee));
+                EventBase *event=io_list_.back();
+                io_list_.pop_back();
+                ee.data.fd=event->fd;
+                ee.events=EPOLLIN|EPOLLPRI|EPOLLET;
+                ee.data.ptr=event;
+                epoll_ctl(epfd,EPOLL_CTL_ADD,event->fd,&ee);
+                event_number++;
+            }
+            int epoll_result=epoll_wait(epfd,buf,MAXN,waitTime->tv_sec*1000-waitTime->tv_usec/1000);
+
+        }
+
+
+
+    }
+
+}
+#endif
+
 
 }
 

@@ -17,7 +17,7 @@
 #include <queue>
 #include <set>
 #include <unordered_map>
-#define DISPATCHER_SELECT
+//#define DISPATCHER_SELECT
 
 
 namespace cppnet{
@@ -120,8 +120,50 @@ public:
 };
     
 #endif
+#define DISPATCHER_EPOLL
+#ifdef DISPATCHER_EPOLL
+#include <sys/epoll.h>
+class Dispatcher{
+    using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
+    using TimeValList=std::multiset<struct timeval,TimeValCompartor>;
+    std::list<EventBase*> io_list_;
+    TimeEventList time_events_list_;
+    std::list<TimeEvent*> &from_time_events_list_;
+    TimeValList time_val_list_;
+    const int MAXN=65535;
+    int epfd;
+    int event_number;
 
-            
+
+    bool IOEventEmpty(){
+        return io_list_.empty()&&event_number==0;
+    }
+    bool TimeEventEmpty(){
+        return from_time_events_list_.empty()&&time_events_list_.empty();
+    }
+public:
+    Dispatcher(std::list<EventBase*>&io,std::list<TimeEvent*> &t):io_list_(io),from_time_events_list_(t){
+        epfd=epoll_create(MAXN);
+        event_number=0;
+    }
+    void dispatch();
+};
+
+
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class IoContext{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
