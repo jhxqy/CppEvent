@@ -17,8 +17,13 @@
 #include <queue>
 #include <set>
 #include <unordered_map>
-//#define DISPATCHER_SELECT
 
+#ifdef __APPLE__
+#define DISPATCHER_SELECT
+#endif
+#ifdef  __linux__
+#define DISPATCHER_EPOLL
+#endif
 
 namespace cppnet{
 namespace async{
@@ -120,17 +125,16 @@ public:
 };
     
 #endif
-#define DISPATCHER_EPOLL
 #ifdef DISPATCHER_EPOLL
 #include <sys/epoll.h>
 class Dispatcher{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
     using TimeValList=std::multiset<struct timeval,TimeValCompartor>;
-    std::list<EventBase*> io_list_;
+    std::list<EventBase*> &io_list_;
     TimeEventList time_events_list_;
     std::list<TimeEvent*> &from_time_events_list_;
     TimeValList time_val_list_;
-    const int MAXN=65535;
+    const static int MAXN=1024;
     int epfd;
     int event_number;
 

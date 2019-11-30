@@ -253,12 +253,13 @@ void Dispatcher::dispatch(){
 
 #ifdef DISPATCHER_EPOLL
 void Dispatcher::dispatch(){
-    struct epoll_event buf[MAXN];
+    static struct  epoll_event buf[MAXN];
     while(!(TimeEventEmpty()&&IOEventEmpty())){
+        TimeEvent *te=nullptr;
+        struct timeval tv;
+        struct timeval *waitTime=nullptr;
         if(!TimeEventEmpty()){
-            TimeEvent *te=nullptr;
-            struct timeval tv;
-            struct timeval *waitTime=nullptr;
+
             if(!TimeEventEmpty()){
                 for(auto i:from_time_events_list_){
                     time_events_list_.push(i);
@@ -269,19 +270,85 @@ void Dispatcher::dispatch(){
                 tv=*time_val_list_.begin();
                 waitTime=&tv;
             }
-            while(!io_list_.empty()){
-                struct epoll_event ee;
-                memset(&ee,0, sizeof(ee));
-                EventBase *event=io_list_.back();
-                io_list_.pop_back();
-                ee.data.fd=event->fd;
-                ee.events=EPOLLIN|EPOLLPRI|EPOLLET;
-                ee.data.ptr=event;
-                epoll_ctl(epfd,EPOLL_CTL_ADD,event->fd,&ee);
-                event_number++;
-            }
-            int epoll_result=epoll_wait(epfd,buf,MAXN,waitTime->tv_sec*1000-waitTime->tv_usec/1000);
 
+        }
+        while(!io_list_.empty()){
+            struct epoll_event ee;
+            memset(&ee,0, sizeof(ee));
+            EventBase *event=io_list_.back();
+            io_list_.pop_back();
+            ee.data.fd=event->fd;
+            if(event->event_type==EventBaseType::read){
+                ee.events=EPOLLIN|EPOLLPRI|EPOLLET;
+            }else{
+                ee.events=EPOLLOUT|EPOLLET;
+            };
+            ee.data.ptr=event;
+            epoll_ctl(epfd,EPOLL_CTL_ADD,event->fd,&ee);
+
+            event_number++;
+        }
+
+        struct timeval start_time,end_time;
+        gettimeofday(&start_time,nullptr);
+        long timeout=-1;
+        if(waitTime!= nullptr){
+            timeout=waitTime->tv_sec*1000+waitTime->tv_usec/1000;
+        }
+        int epoll_result=epoll_wait(epfd,buf,MAXN,timeout);
+        gettimeofday(&end_time,nullptr);
+        end_time.tv_sec=end_time.tv_sec-start_time.tv_sec;
+        end_time.tv_usec=end_time.tv_usec-start_time.tv_usec;
+        while(end_time.tv_usec<0){
+            end_time.tv_usec+=1000000;
+            end_time.tv_sec--;
+        }
+        if(epoll_result==-1){
+            continue;
+        }
+        if(te!=nullptr){
+            TimeLimit ntl=TimeLimit::NowTimeLimit();
+            while(te->timelimit<ntl){
+                te->call_back();
+                time_events_list_.pop();
+                time_val_list_.erase(te->time);
+                delete te;
+                if (!time_events_list_.empty()) {
+                    te=time_events_list_.top();
+                }else{
+                    break;
+                }
+            }
+
+
+        }
+        if (!time_events_list_.empty()) {
+            te=time_events_list_.top();
+            time_events_list_.pop();
+            time_val_list_.erase(te->time);
+            te->time.tv_sec-=tv.tv_sec;
+            te->time.tv_usec-=tv.tv_usec;
+            if(te->time.tv_usec<0){
+                te->time.tv_sec--;
+                te->time.tv_usec+=1000000;
+            }
+            time_val_list_.insert(te->time);
+            time_events_list_.push(te);
+        }
+
+
+        for(int i=0;i<epoll_result;i++){
+            if(buf[i].events&EPOLLIN){
+                epoll_ctl(epfd,EPOLL_CTL_DEL,static_cast<EventBase*>((buf[i].data.ptr))->fd,&buf[i]);
+                static_cast<EventBase*>((buf[i].data.ptr))->call_back(static_cast<EventBase*>((buf[i].data.ptr))->fd);
+                delete static_cast<EventBase*>((buf[i].data.ptr));
+                event_number--;
+            }else if(buf[i].events&EPOLLOUT){
+                epoll_ctl(epfd,EPOLL_CTL_DEL,static_cast<EventBase*>((buf[i].data.ptr))->fd,&buf[i]);
+                static_cast<EventBase*>((buf[i].data.ptr))->call_back(static_cast<EventBase*>((buf[i].data.ptr))->fd);
+                delete static_cast<EventBase*>((buf[i].data.ptr));
+                event_number--;
+            }
         }
 
 

@@ -24,12 +24,12 @@ Timer t2(ctx);
 Timer t3(ctx);
 
 void f1(){
-    cout<<"3秒间隔 :"<<time(nullptr)<<endl;
+    cout<<"1秒间隔 :"<<time(nullptr)<<endl;
     t.AsyncWait(f1);
 }
 
 void f2(){
-    cout<<"1秒间隔 :"<<time(nullptr)<<endl;
+    cout<<"3秒间隔 :"<<time(nullptr)<<endl;
     t2.AsyncWait(f2);
 }
 
@@ -42,33 +42,23 @@ void ReadF(int fd){
     ssize_t n=read(fd, buf, 1024);
     buf[n]=0;
     cout<<"异步读入"<<buf;
+    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
 }
 
+void S(){
+    cout<<"Control C"<<endl;
+
+}
 int main(int argc, const char * argv[]) {
-#ifdef  __linux__
-    cout<<"linux"<<endl;
-#endif
-    int epfd=epoll_create(256);
-    struct epoll_event e;
-    memset(&e,0, sizeof(e));
-    e.events=EPOLLIN|EPOLLPRI|EPOLLET;
-    e.data.fd=fileno(stdin);
-
-    epoll_ctl(epfd,EPOLL_CTL_ADD,fileno(stdin),&e);
-    struct epoll_event events[1024];
-
-    int EN=epoll_wait(epfd,events,1024,-1);
-    for(int i=0;i<EN;i++){
-        if(events[i].events&EPOLLIN){
-            char buf[1024];
-            ssize_t len=read(events[i].data.fd,buf,1024);
-            buf[len]=0;
-            cout<<"异步读入:"<<buf;
-            epoll_ctl(epfd,EPOLL_CTL_DEL,events[i].data.fd,&events[i]);
-        }
-    }
-    EN=epoll_wait(epfd,events,1024,-1);
-    cout<<EN;
+    t.ExpiresAfter(chrono::seconds(1));
+    t2.ExpiresAfter(chrono::seconds(3));
+    t3.ExpiresAfter(chrono::milliseconds(333));
+    ctx.AddSignalEvent(SIGINT,S);
+//    t.AsyncWait(f1);
+//    t2.AsyncWait(f2);
+//    t3.AsyncWait(f3);
+    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
+    ctx.Run();
     return 0;
 }
 
