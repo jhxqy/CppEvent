@@ -13,7 +13,6 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
-#include <sys/epoll.h>
 using namespace std;
 
 using namespace cppnet::async;
@@ -50,9 +49,9 @@ void S(){
 
 }
 int main(int argc, const char * argv[]) {
-    t.ExpiresAfter(chrono::seconds(1));
-    t2.ExpiresAfter(chrono::seconds(3));
-    t3.ExpiresAfter(chrono::milliseconds(333));
+//    t.ExpiresAfter(chrono::seconds(1));
+//    t2.ExpiresAfter(chrono::seconds(3));
+//    t3.ExpiresAfter(chrono::milliseconds(333));
     ctx.AddSignalEvent(SIGINT,S);
 //    t.AsyncWait(f1);
 //    t2.AsyncWait(f2);

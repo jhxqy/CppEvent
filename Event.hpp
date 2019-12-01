@@ -74,7 +74,7 @@ struct TimeEventCompartor{
             
 
 struct TimeValCompartor{
-    bool operator()(const struct timeval &a, const struct timeval &b);
+    bool operator()(const struct timeval &a, const struct timeval &b)const ;
 };
 
             

@@ -49,7 +49,7 @@ bool TimeEventCompartor::operator()(TimeEvent *t1, TimeEvent *t2) const {
     return (t1->time.tv_usec)>(t2->time.tv_usec);
 }
 
-bool TimeValCompartor::operator()(const struct timeval &a, const struct timeval &b){
+bool TimeValCompartor::operator()(const struct timeval &a, const struct timeval &b)const {
     if(a.tv_sec<b.tv_sec){
         return true;
     }else if(a.tv_sec>b.tv_sec){
