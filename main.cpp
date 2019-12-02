@@ -36,12 +36,17 @@ void f3(){
     cout<<"0.3秒间隔 :"<<time(nullptr)<<endl;
     t3.AsyncWait(f3);
 }
+int c=1;
 void ReadF(int fd){
     char buf[1024];
     ssize_t n=read(fd, buf, 1024);
     buf[n]=0;
     cout<<"异步读入"<<buf;
-    ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
+    if(c--){
+        ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
+
+    }
+
 }
 
 void S(){
@@ -49,13 +54,13 @@ void S(){
 
 }
 int main(int argc, const char * argv[]) {
-//    t.ExpiresAfter(chrono::seconds(1));
-//    t2.ExpiresAfter(chrono::seconds(3));
-//    t3.ExpiresAfter(chrono::milliseconds(333));
-    ctx.AddSignalEvent(SIGINT,S);
-//    t.AsyncWait(f1);
-//    t2.AsyncWait(f2);
-//    t3.AsyncWait(f3);
+   t.ExpiresAfter(chrono::seconds(1));
+ //   t2.ExpiresAfter(chrono::seconds(3));
+  //  t3.ExpiresAfter(chrono::milliseconds(333));
+//    ctx.AddSignalEvent(SIGINT,S);
+    t.AsyncWait(f1);
+  //   t2.AsyncWait(f2);
+   // t3.AsyncWait(f3);
     ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
     ctx.Run();
     return 0;

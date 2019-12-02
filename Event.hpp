@@ -19,11 +19,16 @@
 #include <unordered_map>
 
 #ifdef __APPLE__
-#define DISPATCHER_SELECT
+
+#define DISPATCHER_KQUEUE
 #endif
+
+
 #ifdef  __linux__
 #define DISPATCHER_EPOLL
 #endif
+
+
 
 namespace cppnet{
 namespace async{
@@ -96,6 +101,7 @@ public:
 
 };
 #ifdef DISPATCHER_SELECT
+#include <sys/select.h>
 
 class Dispatcher{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
@@ -120,11 +126,13 @@ public:
         
     }
     
-    void dispatch();
+    void Dispatch();
     
 };
     
 #endif
+
+
 #ifdef DISPATCHER_EPOLL
 #include <sys/epoll.h>
 class Dispatcher{
@@ -150,16 +158,54 @@ public:
         epfd=epoll_create(MAXN);
         event_number=0;
     }
-    void dispatch();
+    void Dispatch();
+    ~void Dispatcher();
 };
-
-
 #endif
 
 
+#ifdef DISPATCHER_KQUEUE
 
+#include <sys/event.h>
+#include <sys/types.h>
+typedef long time_t;
+#ifndef _TIMESPEC
+#define _TIMESPEC
+struct timespec {
+time_t tv_sec; // seconds
+long tv_nsec; // and nanoseconds
+};
+#endif
+class Dispatcher{
 
+    using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
+    using TimeValList=std::multiset<struct timeval,TimeValCompartor>;
+    std::list<EventBase*> &io_list_;
+    TimeEventList time_events_list_;
+    std::list<TimeEvent*> &from_time_events_list_;
+    TimeValList time_val_list_;
+    const static int MAXN=1024;
+    int kid;
+    int event_number;
 
+    bool IOEventEmpty(){
+        return io_list_.empty()&&event_number==0;
+    }
+    bool TimeEventEmpty(){
+        return from_time_events_list_.empty()&&time_events_list_.empty();
+    }
+public:
+    Dispatcher(std::list<EventBase*>&io,std::list<TimeEvent*>&t):io_list_(io),from_time_events_list_(t){
+        kid=kqueue();
+        if(kid==-1){
+            throw std::runtime_error("kqueue fd create error!");
+        }
+        event_number=0;
+    }
+    void Dispatch();
+
+};
+#endif
 
 
 

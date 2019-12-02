@@ -6,12 +6,12 @@
 //  Copyright © 2019 贾皓翔. All rights reserved.
 //
 
-#include "Event.hpp"
-#include <sys/time.h>
 #include <unistd.h>
 #include <iostream>
 #include <csignal>
 #include <cstring>
+#include "Event.hpp"
+#include <sys/time.h>
 
 namespace cppnet{
 namespace async{
@@ -95,7 +95,7 @@ void IoContext::AddEvent(TimeEvent *e){
 }
 
 void IoContext::Run(){
-    dispatcher.dispatch();
+    dispatcher.Dispatch();
 }
 
 void IoContext::AddSignalEvent(int SIG, std::function<void ()> cb){
@@ -136,7 +136,7 @@ void SignalMap::rmFd(int SIG){
 
 
 #ifdef DISPATCHER_SELECT
-void Dispatcher::dispatch(){
+void Dispatcher::Dispatch(){
     while (!IOListEmpty()||!TimeListEmpty()) {
         if (!IOListEmpty()) {
             for(auto i:from_io_list_){
@@ -252,7 +252,8 @@ void Dispatcher::dispatch(){
 
 
 #ifdef DISPATCHER_EPOLL
-void Dispatcher::dispatch(){
+
+void Dispatcher::Dispatch(){
     static struct  epoll_event buf[MAXN];
     while(!(TimeEventEmpty()&&IOEventEmpty())){
         TimeEvent *te=nullptr;
@@ -356,8 +357,101 @@ void Dispatcher::dispatch(){
     }
 
 }
+Dispatcher::~Dispatcher(){
+    
+}
 #endif
 
+
+#ifdef DISPATCHER_KQUEUE
+
+void Dispatcher::Dispatch(){
+    static struct kevent buf[MAXN];
+    while (!(IOEventEmpty()&&TimeEventEmpty())) {
+        TimeEvent *te=nullptr;
+        struct timeval tv;
+        struct timespec ts;
+        struct timespec *waitTime=nullptr;
+        if(!TimeEventEmpty()){
+
+            if(!TimeEventEmpty()){
+                for(auto i:from_time_events_list_){
+                    time_events_list_.push(i);
+                    time_val_list_.insert(i->time);
+                }
+                from_time_events_list_.clear();
+                te=time_events_list_.top();
+                tv=*time_val_list_.begin();
+                ts.tv_sec=tv.tv_sec;
+                ts.tv_nsec=tv.tv_usec*1000;
+                waitTime=&ts;
+            }
+        }
+        while(!io_list_.empty()){
+            struct kevent ee;
+            memset(&ee,0, sizeof(ee));
+            EventBase *event=io_list_.back();
+            io_list_.pop_back();
+            if (event->event_type==EventBaseType::read) {
+                EV_SET(&ee, event->fd, EVFILT_READ, EV_ADD|EV_CLEAR, 0, 0,event);
+            }else if(event->event_type==EventBaseType::write){
+                EV_SET(&ee, event->fd, EVFILT_WRITE, EV_ADD|EV_CLEAR, NOTE_WRITE, 0,event);
+            }
+            kevent(kid, &ee, 1, nullptr, 0, nullptr);
+            event_number++;
+        }
+        
+        
+        int kqueue_result=kevent(kid, nullptr,0, buf, MAXN, waitTime);
+        if(kqueue_result>=0){
+            if(te!=nullptr){
+                TimeLimit ntl=TimeLimit::NowTimeLimit();
+                while(te->timelimit<ntl){
+                    te->call_back();
+                    time_events_list_.pop();
+                    time_val_list_.erase(te->time);
+                    delete te;
+                    if (!time_events_list_.empty()) {
+                        te=time_events_list_.top();
+                    }else{
+                        break;
+                    }
+                }
+                if (!time_events_list_.empty()) {
+                    te=time_events_list_.top();
+                    time_events_list_.pop();
+                    time_val_list_.erase(te->time);
+
+
+                    te->time.tv_sec-=ts.tv_sec;
+                    te->time.tv_usec-=ts.tv_nsec/1000;
+                    if(te->time.tv_usec<0){
+                        te->time.tv_sec--;
+                        te->time.tv_usec+=1000000;
+                    }
+
+                    time_val_list_.insert(te->time);
+                    time_events_list_.push(te);
+                }
+            }
+            for(int i=0;i<kqueue_result;i++){ 
+                static_cast<EventBase*>(buf[i].udata)->call_back(static_cast<EventBase*>(buf[i].udata)->fd);
+                event_number--;
+                delete static_cast<EventBase*>(buf[i].udata);
+            }
+            
+            
+            
+        }
+        
+        
+        
+    }
+}
+
+
+
+#endif
 
 }
 
