@@ -304,9 +304,6 @@ void Dispatcher::Dispatch(){
             end_time.tv_usec+=1000000;
             end_time.tv_sec--;
         }
-        if(epoll_result==-1){
-            continue;
-        }
         if(te!=nullptr){
             TimeLimit ntl=TimeLimit::NowTimeLimit();
             while(te->timelimit<ntl){
@@ -320,8 +317,6 @@ void Dispatcher::Dispatch(){
                     break;
                 }
             }
-
-
         }
         if (!time_events_list_.empty()) {
             te=time_events_list_.top();
@@ -336,7 +331,10 @@ void Dispatcher::Dispatch(){
             time_val_list_.insert(te->time);
             time_events_list_.push(te);
         }
-
+        
+        if(epoll_result==-1){
+            continue;
+        }
 
         for(int i=0;i<epoll_result;i++){
             if(buf[i].events&EPOLLIN){
@@ -352,7 +350,7 @@ void Dispatcher::Dispatch(){
             }
         }
 
-
+        
 
     }
 
@@ -373,7 +371,6 @@ void Dispatcher::Dispatch(){
         struct timespec ts;
         struct timespec *waitTime=nullptr;
         if(!TimeEventEmpty()){
-
             if(!TimeEventEmpty()){
                 for(auto i:from_time_events_list_){
                     time_events_list_.push(i);
@@ -386,69 +383,88 @@ void Dispatcher::Dispatch(){
                 ts.tv_nsec=tv.tv_usec*1000;
                 waitTime=&ts;
             }
+
         }
         while(!io_list_.empty()){
             struct kevent ee;
             memset(&ee,0, sizeof(ee));
             EventBase *event=io_list_.back();
             io_list_.pop_back();
-            if (event->event_type==EventBaseType::read) {
-                EV_SET(&ee, event->fd, EVFILT_READ, EV_ADD|EV_CLEAR, 0, 0,event);
-            }else if(event->event_type==EventBaseType::write){
-                EV_SET(&ee, event->fd, EVFILT_WRITE, EV_ADD|EV_CLEAR, NOTE_WRITE, 0,event);
+            ee.ident=event->fd;
+            if(event->event_type==EventBaseType::read){
+                EV_SET(&ee,event->fd,EVFILT_READ,EV_ADD|EV_ENABLE|EV_ONESHOT,0,0,0);
+            }else{
+                EV_SET(&ee,event->fd,EVFILT_WRITE,EV_ADD|EV_ENABLE|EV_ONESHOT,0,0,0);
+
             }
+            ee.udata=event;
             kevent(kid, &ee, 1, nullptr, 0, nullptr);
             event_number++;
         }
-        
-        
-        int kqueue_result=kevent(kid, nullptr,0, buf, MAXN, waitTime);
-        if(kqueue_result>=0){
-            if(te!=nullptr){
-                TimeLimit ntl=TimeLimit::NowTimeLimit();
-                while(te->timelimit<ntl){
-                    te->call_back();
-                    time_events_list_.pop();
-                    time_val_list_.erase(te->time);
-                    delete te;
-                    if (!time_events_list_.empty()) {
-                        te=time_events_list_.top();
-                    }else{
-                        break;
-                    }
-                }
+        struct timeval start_time,end_time;
+        gettimeofday(&start_time,nullptr);
+        int kqueue_result=kevent(kid, nullptr, 0,buf, MAXN, waitTime);
+        gettimeofday(&end_time,nullptr);
+        end_time.tv_sec=end_time.tv_sec-start_time.tv_sec;
+        end_time.tv_usec=end_time.tv_usec-start_time.tv_usec;
+        while(end_time.tv_usec<0){
+            end_time.tv_usec+=1000000;
+            end_time.tv_sec--;
+        }
+        if (kqueue_result<0) {
+            continue;
+        }
+        if(te!=nullptr){
+            TimeLimit ntl=TimeLimit::NowTimeLimit();
+            while(te->timelimit<ntl){
+                te->call_back();
+                time_events_list_.pop();
+                time_val_list_.erase(te->time);
+                delete te;
                 if (!time_events_list_.empty()) {
                     te=time_events_list_.top();
-                    time_events_list_.pop();
-                    time_val_list_.erase(te->time);
-
-
-                    te->time.tv_sec-=ts.tv_sec;
-                    te->time.tv_usec-=ts.tv_nsec/1000;
-                    if(te->time.tv_usec<0){
-                        te->time.tv_sec--;
-                        te->time.tv_usec+=1000000;
-                    }
-
-                    time_val_list_.insert(te->time);
-                    time_events_list_.push(te);
+                }else{
+                    break;
                 }
             }
-            for(int i=0;i<kqueue_result;i++){ 
-                static_cast<EventBase*>(buf[i].udata)->call_back(static_cast<EventBase*>(buf[i].udata)->fd);
-                event_number--;
-                delete static_cast<EventBase*>(buf[i].udata);
+        }
+        if (!time_events_list_.empty()) {
+            te=time_events_list_.top();
+            time_events_list_.pop();
+            time_val_list_.erase(te->time);
+            te->time.tv_sec-=ts.tv_sec;
+            te->time.tv_usec-=ts.tv_nsec/1000;
+            if(te->time.tv_usec<0){
+                te->time.tv_sec--;
+                te->time.tv_usec+=1000000;
             }
-            
-            
+            time_val_list_.insert(te->time);
+            time_events_list_.push(te);
+        }
+
+        for(int i=0;i<kqueue_result;i++){
+            if(buf[i].filter&EVFILT_READ){
+                EventBase *e=static_cast<EventBase*>(buf[i].udata);
+                e->call_back(e->fd);
+                delete e;
+                event_number--;
+            }else if(buf[i].filter&EVFILT_WRITE){
+                EventBase *e=static_cast<EventBase*>(buf[i].udata);
+                e->call_back(e->fd);
+                delete e;
+                event_number--;
+
+            }
             
         }
         
-        
-        
+
     }
 }
 
+Dispatcher::~Dispatcher(){
+    close(kid);
+}
 
 
 #endif

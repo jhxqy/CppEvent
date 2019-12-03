@@ -19,7 +19,6 @@
 #include <unordered_map>
 
 #ifdef __APPLE__
-
 #define DISPATCHER_KQUEUE
 #endif
 
@@ -134,7 +133,7 @@ public:
 
 
 #ifdef DISPATCHER_EPOLL
-#include <sys/epoll.h>
+#include <sys/epoll.h> 
 class Dispatcher{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
     using TimeValList=std::multiset<struct timeval,TimeValCompartor>;
@@ -203,6 +202,7 @@ public:
         event_number=0;
     }
     void Dispatch();
+    ~Dispatcher();
 
 };
 #endif
