@@ -158,7 +158,7 @@ public:
         event_number=0;
     }
     void Dispatch();
-    ~void Dispatcher();
+    ~Dispatcher();
 };
 #endif
 

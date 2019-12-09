@@ -107,13 +107,18 @@ void IoContext::AddSignalEvent(int SIG, std::function<void ()> cb){
         using namespace std;
         for(auto i:SignalMap::Instance()->getFd(SIG)){
             write(i, &c, 1);
+            close(i);
+   //         std::cout<<"close "<<i<<std::endl;
         }
+        
         SignalMap::Instance()->rmFd(SIG);
         SignalMap::Instance()->Recover(SIG);
         
     });
-    AddEvent(new EventBase(pfd[0],EventBaseType::read,[cb](int){
+    AddEvent(new EventBase(pfd[0],EventBaseType::read,[cb](int fd){
         cb();
+   /    close (fd);
+      //  std::cout<<"close "<<fd<<std::endl;
     }));
 }
 

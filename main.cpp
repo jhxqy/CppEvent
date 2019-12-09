@@ -51,18 +51,22 @@ void ReadF(int fd){
 
 void S(){
     cout<<"Control C"<<endl;
+    ctx.AddSignalEvent(SIGINT, S);
+
 
 }
 int main(int argc, const char * argv[]) {
     t.ExpiresAfter(chrono::seconds(1));
     t2.ExpiresAfter(chrono::seconds(3));
     t3.ExpiresAfter(chrono::milliseconds(333));
-    ctx.AddSignalEvent(SIGINT,S);
-    t.AsyncWait(f1);
-    t2.AsyncWait(f2);
-    t3.AsyncWait(f3);
+//    ctx.AddSignalEvent(SIGINT,S);
+//    t.AsyncWait(f1);
+//    t2.AsyncWait(f2);
+//    t3.AsyncWait(f3);
     ctx.AddEvent(new EventBase(fileno(stdin),EventBaseType::read,ReadF));
-    ctx.Run();
+ 
+    ctx.AddSignalEvent(SIGINT, S);
+       ctx.Run();
     return 0;
 }
 
