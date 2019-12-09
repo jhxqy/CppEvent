@@ -117,7 +117,7 @@ void IoContext::AddSignalEvent(int SIG, std::function<void ()> cb){
     });
     AddEvent(new EventBase(pfd[0],EventBaseType::read,[cb](int fd){
         cb();
-   /    close (fd);
+        close (fd);
       //  std::cout<<"close "<<fd<<std::endl;
     }));
 }
