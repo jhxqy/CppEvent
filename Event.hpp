@@ -218,7 +218,6 @@ public:
 class IoContext{
     using TimeEventList=std::priority_queue<TimeEvent*,std::vector<TimeEvent*>,TimeEventCompartor>;
     std::list<EventBase*> io_list_;
-
     std::list<TimeEvent*> time_events_list_;
     Dispatcher dispatcher;
             
