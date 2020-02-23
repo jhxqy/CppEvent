@@ -14,9 +14,12 @@
 namespace event{
 namespace time{
 
-#define GetTimeOfDay ::gettimeofday
+inline int GetTimeOfDay(struct timeval *t){
+    return ::gettimeofday(t, nullptr);
+}
 
-int TimeCmp(struct timeval *t1,struct timeval *t2){
+
+inline int TimeCmp(struct timeval *t1,struct timeval *t2){
     if (t1->tv_sec<t2->tv_sec) {
         return -1;
     }else if(t1->tv_sec>t2->tv_sec){
@@ -29,7 +32,7 @@ int TimeCmp(struct timeval *t1,struct timeval *t2){
         return 0;
     }
 }
-void TimeAdd(struct timeval &t1,struct timeval &t2,struct timeval *t3){
+inline void TimeAdd(struct timeval &t1,struct timeval &t2,struct timeval *t3){
     assert(t3!=nullptr);
     t3->tv_sec=t1.tv_sec+t2.tv_sec;
     t3->tv_usec=t1.tv_usec+t2.tv_usec;
@@ -38,7 +41,7 @@ void TimeAdd(struct timeval &t1,struct timeval &t2,struct timeval *t3){
         t3->tv_usec-=1000000;
     }
 }
-void TimeSub(struct timeval &t1,struct timeval &t2,struct timeval *t3){
+inline void TimeSub(struct timeval &t1,struct timeval &t2,struct timeval *t3){
     assert(t3!=nullptr);
     t3->tv_sec=t1.tv_sec-t2.tv_sec;
     t3->tv_usec=t1.tv_usec-t2.tv_usec;
