@@ -16,18 +16,18 @@
 #include "evtime.hpp"
 #include <map>
 #include <unordered_map>
-
+#include <unordered_set>
 #include<unistd.h>
-
+#define KQUEUE
 
 namespace event{
 #define EventTypeMap(XX)                   \
-XX(EV_WRITE,1)                             \
-XX(EV_READ,2)                              \
-XX(EV_PERSIST,4)                           \
-XX(EV_ET,8)                                \
-XX(EV_TIMEOUT,16)                          \
-XX(EV_SIGNAL,32)
+XX(EVENT_WRITE,1)                             \
+XX(EVENT_READ,2)                              \
+XX(EVENT_PERSIST,4)                           \
+XX(EVENT_ET,8)                                \
+XX(EVENT_TIMEOUT,16)                          \
+XX(EVENT_SIGNAL,32)
 
 #define EventStatusMap(XX)                 \
 XX(PENDING,1)                              \
@@ -62,10 +62,15 @@ struct Event{
     }
      
 };
+#ifdef KQUEUE
 
+#include <sys/event.h>
+#include <sys/types.h>
 class Dispatcher{
-    std::list<Event*> new_io_events_list_;
+    std::unordered_set<Event*> new_io_events_list_;
     std::list<Event*> new_time_events_list_;
+    int kq=kqueue();
+
 public:
     Dispatcher(){
         
@@ -73,41 +78,70 @@ public:
     void AddEvent(Event *e,bool t){
         if (t) {
             new_time_events_list_.push_back(e);
-        }else{
-            new_io_events_list_.push_back(e);
+        }
+        if(e->fd!=-1){
+            new_io_events_list_.insert(e);
+            struct kevent ee;
+            memset(&ee,0, sizeof(ee));
+            ee.ident=e->fd;
+            int ev_filter=0;
+            if(e->flag|EventType::EVENT_READ){
+                ev_filter|=EVFILT_READ;
+            }
+            if(e->flag|EventType::EVENT_WRITE){
+                ev_filter|=EVFILT_WRITE;
+            }
+            int way=0;
+            
+//                       if(event->event_type==EventBaseType::read){
+//                           EV_SET(&ee,event->fd,EVFILT_READ,EV_ADD|EV_ENABLE|EV_ONESHOT,0,0,0);
+//                       }else{
+//                           EV_SET(&ee,event->fd,EVFILT_WRITE,EV_ADD|EV_ENABLE|EV_ONESHOT,0,0,0);
+//
+//                       }
         }
         
+        
     }
-    void RemoveEvent(Event *e);
+    void RemoveEvent(Event *e){
+        
+    }
     int Dispatch(){
+        while (new_io_events_list_.size()!=0||new_time_events_list_.size()!=0) {
+            
+        }
         return 0;
     }
     ~Dispatcher(){
-        
+        close(kq);
     }
 };
 
+#endif
 
 class EventContext{
     Dispatcher dispatcher_;
     Event* IfSignal(Event *e){
-        if (!(e->flag&EventType::EV_SIGNAL)) {
+        if (!(e->flag&EventType::EVENT_SIGNAL)) {
             return e;
         }
         signal_event_map_[e->fd].push_back(e);
         signal(e->fd,[](int sig){
             write(EventContext::signal_write_fd_, &sig, sizeof(sig));
         });
-        Event *newe=new Event(signal_read_fd_,e->flag|EventType::EV_READ|EventType::EV_SIGNAL,[this](evfd_t fd,int){
+        Event *newe=new Event(signal_read_fd_,e->flag|EventType::EVENT_READ|EventType::EVENT_SIGNAL,[this](evfd_t fd,int){
             int res;
             ssize_t size=read(fd, &res, sizeof(res));
             if (size!=sizeof(res)) {
                 return;
             }else{
-                for(auto i:this->signal_event_map_[res]){
-                    if(i->status&PENDING){
-                        i->callback(i->fd,i->flag);
-                    }
+                std::list<Event*> tempList;
+                auto &ref=this->signal_event_map_[res];
+                tempList.assign(ref.begin(), ref.end());
+                ref.clear();
+                for(auto i:tempList){
+                    i->callback(i->fd,i->flag);
+                    delete i;
                 }
             }
         });

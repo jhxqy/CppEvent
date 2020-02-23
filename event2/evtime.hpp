@@ -51,7 +51,14 @@ inline void TimeSub(struct timeval &t1,struct timeval &t2,struct timeval *t3){
     }
 }
 
-
+inline void Timeval2Timespec(struct timeval &tv,struct timespec *ts){
+    ts->tv_sec=tv.tv_sec;
+    ts->tv_nsec=tv.tv_usec*1000;
+}
+inline void Timespec2Timeval(struct timespec &from,struct timeval *to){
+    to->tv_sec=from.tv_sec;
+    to->tv_usec=from.tv_nsec/1000;
+}
 
 
 }
