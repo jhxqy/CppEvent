@@ -20,6 +20,7 @@
 #include <set>
 #include<unistd.h>
 #include <cerrno>
+#include <iostream>
 #define KQUEUE
 
 namespace event{
@@ -101,7 +102,9 @@ public:
             int flags=0;
             flags|=EV_ENABLE;
             flags|=EV_ADD;
-            flags|=EV_ONESHOT;
+            if(!(e->flag&EVENT_PERSIST)){
+                flags|=EV_ONESHOT;
+            }
             EV_SET(&ee,e->fd,ev_filter,flags,0,0,e);
             kevent(kq, &ee, 1, nullptr, 0, nullptr);
             if(ee.flags&EV_ERROR){
@@ -115,25 +118,7 @@ public:
     void RemoveEvent(Event *e){
         
     }
-    int Dispatch(){
-        struct kevent buf[1024];
-        while (new_io_events_list_.size()!=0||new_time_events_list_.size()!=0) {
-            int res;
-            res=kevent(kq, nullptr, 0, buf, 1024, nullptr);
-            if (res<0) {
-                throw std::runtime_error(strerror(errno));
-            }
-            if(res>0){
-                for (int i=0; i<res; i++) {
-                    Event* e=(Event*)buf[i].udata;
-                    new_time_events_list_.erase(e);
-                    new_io_events_list_.erase(e);
-                    e->callback(e->fd,e->flag);
-                }
-            }
-        }
-        return 0;
-    }
+    int Dispatch();
     ~Dispatcher(){
         close(kq);
     }
@@ -149,21 +134,27 @@ class EventContext{
         }
         signal_event_map_[e->fd].push_back(e);
         signal(e->fd,[](int sig){
+//            std::cout<<"进入中断处理函数"<<std::endl;
             write(EventContext::signal_write_fd_, &sig, sizeof(sig));
         });
-        Event *newe=new Event(signal_read_fd_,e->flag|EventType::EVENT_READ|EventType::EVENT_SIGNAL,[this](evfd_t fd,int){
+        Event *newe=new Event(signal_read_fd_,e->flag|EventType::EVENT_READ,[this](evfd_t fd,int){
+//            std::cout<<"进入x信号事件"<<std::endl;
             int res;
             ssize_t size=read(fd, &res, sizeof(res));
             if (size!=sizeof(res)) {
                 return;
-            }else{
+            }else{ 
                 std::list<Event*> tempList;
                 auto &ref=this->signal_event_map_[res];
                 tempList.assign(ref.begin(), ref.end());
-                ref.clear();
+                this->signal_event_map_[res].clear();
                 for(auto i:tempList){
                     i->callback(i->fd,i->flag);
-                    delete i;
+                  //  delete i;
+                    if(i->flag&EVENT_PERSIST){
+                        this->signal_event_map_[res].push_back(i);
+                    }
+                    
                 }
             }
         });
@@ -213,5 +204,36 @@ public:
 inline int EventContext::signal_read_fd_=-1;
 inline int EventContext::signal_write_fd_=-1;
 
+
+
+
+
+inline int Dispatcher::Dispatch(){
+    struct kevent buf[1024];
+    while (new_io_events_list_.size()!=0||new_time_events_list_.size()!=0) {
+        int res;
+        res=kevent(kq, nullptr, 0, buf, 1024, nullptr);
+        if (res<0) {
+            if (errno==EINTR) {
+                continue;
+            }
+        }
+        if(res>0){
+            for (int i=0; i<res; i++) {
+                Event* e=(Event*)buf[i].udata;
+                if(!(e->flag&EVENT_PERSIST)){
+                    new_io_events_list_.erase(e);
+                    new_time_events_list_.erase(e);
+                }
+                e->callback(e->fd,e->flag);
+//                用来处理EVENT_PERSIST的成员，再次将其加入；
+//                if(e->flag&EVENT_PERSIST){
+//                    e->context->AddEvent(e);
+//                }
+            }
+        }
+    }
+    return 0;
+}
 };
 #endif /* event2_hpp */
