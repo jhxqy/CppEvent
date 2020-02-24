@@ -17,7 +17,9 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 #include<unistd.h>
+#include <cerrno>
 #define KQUEUE
 
 namespace event{
@@ -48,7 +50,7 @@ enum EventStatus{
     EventStatusMap(XX)
 #undef XX
 };
-
+class EventContext;
 struct Event{
     int flag;
     int status;
@@ -57,6 +59,7 @@ struct Event{
     CallBackType callback;
     struct timeval peroid;
     struct timeval deadline;
+    EventContext *context;
     Event(evfd_t f,int fla,const CallBackType&cb):fd(f),flag(fla),callback(cb),status(EventStatus::WAIT){
         
     }
@@ -66,9 +69,14 @@ struct Event{
 
 #include <sys/event.h>
 #include <sys/types.h>
+struct TimeEventCmpStruct{
+    bool operator()(const Event *e1,const Event *e2) const{
+        return time::TimeCmp(&(e1->deadline), &(e2->deadline))<0;
+    }
+};
 class Dispatcher{
     std::unordered_set<Event*> new_io_events_list_;
-    std::list<Event*> new_time_events_list_;
+    std::set<Event*,TimeEventCmpStruct> new_time_events_list_;
     int kq=kqueue();
 
 public:
@@ -77,13 +85,12 @@ public:
     }
     void AddEvent(Event *e,bool t){
         if (t) {
-            new_time_events_list_.push_back(e);
+            new_time_events_list_.insert(e);
         }
         if(e->fd!=-1){
             new_io_events_list_.insert(e);
             struct kevent ee;
             memset(&ee,0, sizeof(ee));
-            ee.ident=e->fd;
             int ev_filter=0;
             if(e->flag|EventType::EVENT_READ){
                 ev_filter|=EVFILT_READ;
@@ -91,14 +98,16 @@ public:
             if(e->flag|EventType::EVENT_WRITE){
                 ev_filter|=EVFILT_WRITE;
             }
-            int way=0;
-            
-//                       if(event->event_type==EventBaseType::read){
-//                           EV_SET(&ee,event->fd,EVFILT_READ,EV_ADD|EV_ENABLE|EV_ONESHOT,0,0,0);
-//                       }else{
-//                           EV_SET(&ee,event->fd,EVFILT_WRITE,EV_ADD|EV_ENABLE|EV_ONESHOT,0,0,0);
-//
-//                       }
+            int flags=0;
+            flags|=EV_ENABLE;
+            flags|=EV_ADD;
+            flags|=EV_ONESHOT;
+            EV_SET(&ee,e->fd,ev_filter,flags,0,0,e);
+            kevent(kq, &ee, 1, nullptr, 0, nullptr);
+            if(ee.flags&EV_ERROR){
+                throw std::runtime_error(strerror(int(ee.data)));
+            }
+
         }
         
         
@@ -107,8 +116,21 @@ public:
         
     }
     int Dispatch(){
+        struct kevent buf[1024];
         while (new_io_events_list_.size()!=0||new_time_events_list_.size()!=0) {
-            
+            int res;
+            res=kevent(kq, nullptr, 0, buf, 1024, nullptr);
+            if (res<0) {
+                throw std::runtime_error(strerror(errno));
+            }
+            if(res>0){
+                for (int i=0; i<res; i++) {
+                    Event* e=(Event*)buf[i].udata;
+                    new_time_events_list_.erase(e);
+                    new_io_events_list_.erase(e);
+                    e->callback(e->fd,e->flag);
+                }
+            }
         }
         return 0;
     }
@@ -166,6 +188,7 @@ public:
     }
 
     void AddEvent(Event *e,const timeval &t){
+        e->context=this;
         e=IfSignal(e);
         e->peroid=t;
         time::GetTimeOfDay(&(e->deadline));
@@ -173,6 +196,7 @@ public:
         dispatcher_.AddEvent(e,true);
     }
     void AddEvent(Event *e){
+        e->context=this;
         e=IfSignal(e);
         dispatcher_.AddEvent(e,false);
 
