@@ -20,6 +20,8 @@
 #include <list>
 #include <cerrno>
 #include <unistd.h>
+#include <queue>
+#include <vector>
 #ifdef __APPLE__
 #include <sys/event.h>
 #include <sys/types.h>
@@ -68,23 +70,34 @@ struct Event{
 };
 
 struct time_event_cmp{
-    bool operator()(const Event *e1,const Event *e2)const {
-        return time::TimeCmp(&(e1->deadline), &(e2->deadline));
-    }
+    bool operator()(const Event *e1,const Event *e2)const;
 };
+
+inline bool time_event_cmp::operator()(const Event *e1, const Event *e2)const{
+    int result=time::TimeCmp(&(e1->deadline), &(e2->deadline));
+    if(result==0){
+        return (e1<e2);
+    }else{
+        return (result<0);
+    }
+}
+
 class EpollBodyInterface;
 class Context{
     EpollBodyInterface *ebi;
 public:
     Context();
 //    超时事件等待列表列表
-    std::set<Event*,time_event_cmp> time_event_list_;
+    std::multiset<Event*,time_event_cmp> time_event_list_;
 //    IO时间等待列表
-    std::list<Event*> io_event_list_;
+    std::unordered_set<Event*> io_event_list_;
 //    已激活事件列表
     std::list<Event*> active_event_list_;
     ~Context();
-    
+
+    int AddEvent(Event *e,struct timeval *tv);
+    int DelEvent(Event *e);
+    int Run();
 };
 
 class SignalManager{
@@ -98,6 +111,10 @@ public:
          sockpair[0] 用于读
          sockpair[1] 用于写
          */
+    }
+    Event *GetSignalEvent(){
+        static Event e;
+        return &e;
     }
     ~SignalManager(){
         close(sockpair[0]);
@@ -173,6 +190,9 @@ public:
         return res;
         
     }
+    ~KqueueImple(){
+        close(kq);
+    }
     
     
 };
@@ -181,6 +201,8 @@ public:
 
 
 /* object function imple*/
+
+
 inline Context::Context(){
     ebi=new KqueueImple(this);
     
@@ -189,6 +211,56 @@ inline Context::~Context(){
     if(ebi!=nullptr){
         delete ebi;
     }
+}
+
+inline int Context::AddEvent(Event *e, struct timeval *tv){
+    if(tv!=nullptr){
+        e->events|=EVENT_TIMEOUT;
+        e->peroid=*tv;
+        time::GetTimeOfDay(&(e->deadline));
+        time::TimeAdd(e->peroid, e->deadline, &(e->deadline));
+        time_event_list_.insert(e);
+    }
+    if(!(e->events&(EVENT_READ|EVENT_WRITE))){
+        io_event_list_.insert(e);
+        return ebi->AddEvent(e);
+    }
+    
+    
+    /**
+    TODO:
+     信号部分
+     */
+    
+    return 0;
+}
+
+inline int Context::DelEvent(Event *e){
+    //先判断是否在timeevent和ioevent当中，若存在，则从中删除，并从epoll中删除
+    bool existed=false;;
+    if(time_event_list_.count(e)){
+        time_event_list_.erase(e);
+        existed=true;
+    }
+    if(io_event_list_.count(e)){
+        time_event_list_.erase(e);
+        existed=true;
+    }
+    /*
+     若存在并删除返回0，否则返回-1；
+     */
+    if(existed){
+        
+        return ebi->DelEvent(e);
+    }else{
+        return -1;
+    }
+    
+    
+}
+
+inline int Context::Run(){
+    
 }
 
 
