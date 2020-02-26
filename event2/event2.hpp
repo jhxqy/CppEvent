@@ -84,37 +84,7 @@ public:
     Dispatcher(){
         
     }
-    void AddEvent(Event *e,bool t){
-        if (t) {
-            new_time_events_list_.insert(e);
-        }
-        if(e->fd!=-1){
-            new_io_events_list_.insert(e);
-            struct kevent ee;
-            memset(&ee,0, sizeof(ee));
-            int ev_filter=0;
-            if(e->flag|EventType::EVENT_READ){
-                ev_filter|=EVFILT_READ;
-            }
-            if(e->flag|EventType::EVENT_WRITE){
-                ev_filter|=EVFILT_WRITE;
-            }
-            int flags=0;
-            flags|=EV_ENABLE;
-            flags|=EV_ADD;
-            if(!(e->flag&EVENT_PERSIST)){
-                flags|=EV_ONESHOT;
-            }
-            EV_SET(&ee,e->fd,ev_filter,flags,0,0,e);
-            kevent(kq, &ee, 1, nullptr, 0, nullptr);
-            if(ee.flags&EV_ERROR){
-                throw std::runtime_error(strerror(int(ee.data)));
-            }
-
-        }
-        
-        
-    }
+    void AddEvent(Event *e,bool t);
     void RemoveEvent(Event *e){
         
     }
@@ -128,48 +98,55 @@ public:
 
 class EventContext{
     Dispatcher dispatcher_;
-    Event* IfSignal(Event *e){
+    void AddSignal(Event *e){
         if (!(e->flag&EventType::EVENT_SIGNAL)) {
-            return e;
+            return;
         }
         signal_event_map_[e->fd].push_back(e);
         signal(e->fd,[](int sig){
 //            std::cout<<"进入中断处理函数"<<std::endl;
             write(EventContext::signal_write_fd_, &sig, sizeof(sig));
         });
-        Event *newe=new Event(signal_read_fd_,e->flag|EventType::EVENT_READ,[this](evfd_t fd,int){
-//            std::cout<<"进入x信号事件"<<std::endl;
-            int res;
-            ssize_t size=read(fd, &res, sizeof(res));
-            if (size!=sizeof(res)) {
-                return;
-            }else{ 
-                std::list<Event*> tempList;
-                auto &ref=this->signal_event_map_[res];
-                tempList.assign(ref.begin(), ref.end());
-                this->signal_event_map_[res].clear();
-                for(auto i:tempList){
-                    i->callback(i->fd,i->flag);
-                  //  delete i;
-                    if(i->flag&EVENT_PERSIST){
-                        this->signal_event_map_[res].push_back(i);
-                    }
-                    
-                }
-            }
-        });
-        return newe;
+        signal_n_++;
+        return;
         
     }
+    
+    
     std::unordered_map<int,std::list<Event*>> signal_event_map_;
 public:
     static int signal_read_fd_;
     static int signal_write_fd_;
-    EventContext(){
+    Event *signal_event_;
+    int signal_n_;
+    EventContext():signal_n_(0),signal_event_(nullptr){
         int signalfd[2];
         pipe(signalfd);
         signal_read_fd_=signalfd[0];
         signal_write_fd_=signalfd[1];
+        signal_event_=new Event(signal_read_fd_,EventType::EVENT_READ,[this](evfd_t fd,int){
+        //            std::cout<<"进入x信号事件"<<std::endl;
+                    int res;
+                    ssize_t size=read(fd, &res, sizeof(res));
+                    if (size!=sizeof(res)) {
+                        return;
+                    }else{
+                        std::list<Event*> tempList;
+                        auto &ref=this->signal_event_map_[res];
+                        tempList.assign(ref.begin(), ref.end());
+                        this->signal_event_map_[res].clear();
+                        for(auto i:tempList){
+                            i->callback(i->fd,i->flag);
+                            signal_n_--;
+
+                            if(i->flag&EVENT_PERSIST){
+                                i->context->AddEvent(i);
+                            }
+                            
+                        }
+                    }
+                });
+        
     }
     ~EventContext(){
         close(signal_read_fd_);
@@ -180,7 +157,7 @@ public:
 
     void AddEvent(Event *e,const timeval &t){
         e->context=this;
-        e=IfSignal(e);
+        AddSignal(e);
         e->peroid=t;
         time::GetTimeOfDay(&(e->deadline));
         time::TimeAdd(e->deadline, e->peroid, &(e->deadline));
@@ -188,7 +165,7 @@ public:
     }
     void AddEvent(Event *e){
         e->context=this;
-        e=IfSignal(e);
+        AddSignal(e);
         dispatcher_.AddEvent(e,false);
 
     }
@@ -205,7 +182,43 @@ inline int EventContext::signal_read_fd_=-1;
 inline int EventContext::signal_write_fd_=-1;
 
 
+inline void Dispatcher::AddEvent(Event *e, bool t){
+    if (t) {
+        new_time_events_list_.insert(e);
+    }
+    if(e->fd!=-1){
+        if(e->flag&EVENT_SIGNAL){
+            if(e->context->signal_n_>1){
+                return ;
+            }
+            e=e->context->signal_event_;
+        }
+        new_io_events_list_.insert(e);
+        struct kevent ee;
+        memset(&ee,0, sizeof(ee));
+        int ev_filter=0;
+        if(e->flag|EventType::EVENT_READ){
+            ev_filter|=EVFILT_READ;
+        }
+        if(e->flag|EventType::EVENT_WRITE){
+            ev_filter|=EVFILT_WRITE;
+        }
+        int flags=0;
+        flags|=EV_ENABLE;
+        flags|=EV_ADD;
+        if(!(e->flag&EVENT_PERSIST)){
+            flags|=EV_ONESHOT;
+        }
+        EV_SET(&ee,e->fd,ev_filter,flags,0,0,e);
+        kevent(kq, &ee, 1, nullptr, 0, nullptr);
+        if(ee.flags&EV_ERROR){
+            throw std::runtime_error(strerror(int(ee.data)));
+        }
 
+    }
+    
+    
+}
 
 
 inline int Dispatcher::Dispatch(){
