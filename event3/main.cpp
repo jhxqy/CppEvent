@@ -15,28 +15,25 @@ using namespace std;
 using namespace event;
 int main(){
     Context ctx;
-    Event e;
-    memset(&e, 0, sizeof(e));
-    e.status=INIT;
-    e.priority=0;
-    e.fd=fileno(stdin);
-    e.events=EVENT_READ;
-    e.callback=[](evfd_t fd){
-        cout<<"callback"<<endl;
-        char buf[1204];
-        ssize_t n=read(fd, buf, 1204);
-        if(n<0){
-            cout<<"read error!"<<endl;
-            return ;
-        }
+    Event *e=new Event(fileno(stdin),EVENT_READ|EVENT_PERSIST,[](evfd_t fd){
+        char buf[1024];
+        ssize_t n=read(fd, buf, 1024);
         buf[n]=0;
         cout<<buf;
-    };
+    });
+    Event *e1=new Event(-1,EVENT_TIMEOUT|EVENT_PERSIST,[](evfd_t fd){
+        cout<<"定时器: 1s"<<endl;
+    });
+    
     struct timeval t;
+    struct timeval t2;
+    t2.tv_sec=1;
+    t2.tv_usec=0;
     t.tv_sec=5;
     t.tv_usec=0;
     cout<<"时间已加入"<<endl;
-    ctx.AddEvent(&e,&t);
+    ctx.AddEvent(e1,&t2 );
+    ctx.AddEvent(e,nullptr);
     ctx.Run();
     
 }

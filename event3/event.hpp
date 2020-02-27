@@ -66,7 +66,12 @@ struct Event{
     struct timeval peroid;
     struct timeval deadline;
     EventCallBackType callback;
-    
+    Event(){
+        
+    }
+    Event(evfd_t _fd,int _events,const EventCallBackType &cb):fd(_fd),events(_events),callback(cb),status(INIT){
+        
+    }
     
 };
 
@@ -234,10 +239,14 @@ inline int Context::AddEvent(Event *e, struct timeval *tv){
     }else{
         return -1;
     }
-    int res=ebi->AddEvent(e);
-    if(res<0){
-        e->status=EventStatus::INIT;
-        return -1;
+    int res=0;
+    if(e->events&(EVENT_READ|EVENT_WRITE)){
+        res=ebi->AddEvent(e);
+        if(res<0){
+            e->status=EventStatus::INIT;
+            return -1;
+        }
+        io_event_list_.insert(e);
     }
     if(tv!=nullptr){
         e->events|=EVENT_TIMEOUT;
@@ -246,11 +255,9 @@ inline int Context::AddEvent(Event *e, struct timeval *tv){
         time::TimeAdd(e->peroid, e->deadline, &(e->deadline));
         time_event_list_.insert(e);
     }
-    if(e->events&(EVENT_READ|EVENT_WRITE)){
-        io_event_list_.insert(e);
-        return res;
-    }
     
+    return res;
+
     
     /**
     TODO:
@@ -290,8 +297,12 @@ inline void Context::RunActiveEvents(){
     for(auto &i:active_event_list_){
         if(i->status&EventStatus::ACTIVE){
             i->callback(i->fd);
-            if(i->status&EVENT_PERSIST){
+            if(i->events&EVENT_PERSIST){
                 i->status=PENDING;
+                if(i->events&EVENT_TIMEOUT){
+                    time::GetTimeOfDay(&(i->deadline));
+                    time::TimeAdd(i->deadline, i->peroid, &(i->deadline));
+                }
             }else{
                 time_event_list_.erase(i);
                 io_event_list_ .erase(i);
@@ -304,19 +315,15 @@ inline void Context::RunActiveEvents(){
 
 
 inline size_t Context::ActivateTimeoutEvents(struct timeval *time){
-    for(;;){
-        if(time_event_list_.size()==0){
-            return active_event_list_.size();
-        }
-        Event *e=*time_event_list_.begin();
+    for(auto e:time_event_list_){
         if(time::TimeCmp(&(e->deadline), time)<=0){
             e->status=ACTIVE;
-            time_event_list_.erase(time_event_list_.begin());
             active_event_list_.push_back(e);
         }else{
             return active_event_list_.size();
         }
     }
+    return active_event_list_.size();
 }
 inline int Context::Run(){
     
