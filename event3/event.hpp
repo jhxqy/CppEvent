@@ -10,6 +10,7 @@
 #define event_hpp
 
 #include <stdio.h>
+#include <iostream>
 #include <unordered_set>
 #include <unordered_map>
 #include <functional>
@@ -85,6 +86,8 @@ inline bool time_event_cmp::operator()(const Event *e1, const Event *e2)const{
 class EpollBodyInterface;
 class Context{
     EpollBodyInterface *ebi;
+    void RunActiveEvents();
+    void ActivateTimeoutEvents(struct timeval *);
 public:
     Context();
 //    超时事件等待列表列表
@@ -126,8 +129,12 @@ public:
 class EpollBodyInterface{
 public:
 
+    /* 能将事件加入到IO复用模块中*/
     virtual int AddEvent(Event *p)=0;
     virtual int DelEvent(Event*)=0;
+    /* 调用disptach，从而将IO激活事件，加入到actime_list当中，
+     因此，在外部检测超时事件时，也应该判断是否重复，比如在超时了，同时IO也满足了需求，
+     可以在加入active之前，判断时间是否已经被激活*/
     virtual int dispatch(struct timeval *tv)=0;
     virtual ~EpollBodyInterface(){
     }
@@ -150,10 +157,10 @@ public:
         struct kevent ee;
         memset(&ee, 0, sizeof(ee));
         int ev_filter=0;
-        if(e->events|EventType::EVENT_READ){
+        if(e->events&EventType::EVENT_READ){
             ev_filter|=EVFILT_READ;
         }
-        if(e->events|EventType::EVENT_WRITE){
+        if(e->events&EventType::EVENT_WRITE){
             ev_filter|=EVFILT_WRITE;
         }
         int flags=0;
@@ -175,9 +182,14 @@ public:
     int dispatch(struct timeval *val) override{
         struct kevent buf[BUF_MAXN];
         struct timespec tspec;
-        time::Timeval2Timespec(*val, &tspec);
-        int res=kevent(kq,nullptr,0,buf,BUF_MAXN,&tspec);
+        struct timespec *wait_time=nullptr;
+        if(val!=nullptr){
+            time::Timeval2Timespec(*val, &tspec);
+            wait_time=&tspec;
+        }
+        int res=kevent(kq,nullptr,0,buf,BUF_MAXN,wait_time);
         if(res<0){
+            std::cerr<<strerror(errno)<<std::endl;
             return -1;
         }
         if(res==0){
@@ -185,7 +197,10 @@ public:
         }
         for(int i=0;i<res;i++){
             Event *e=(Event*)( buf[i].udata);
-            ctx_->active_event_list_.push_back(e);
+            if(e->status==EventStatus::PENDING){
+                e->status=EventStatus::ACTIVE;
+                ctx_->active_event_list_.push_back(e);
+            }
         }
         return res;
         
@@ -214,6 +229,16 @@ inline Context::~Context(){
 }
 
 inline int Context::AddEvent(Event *e, struct timeval *tv){
+    if(e->status==EventStatus::INIT){
+        e->status=EventStatus::PENDING;
+    }else{
+        return -1;
+    }
+    int res=ebi->AddEvent(e);
+    if(res<0){
+        e->status=EventStatus::INIT;
+        return -1;
+    }
     if(tv!=nullptr){
         e->events|=EVENT_TIMEOUT;
         e->peroid=*tv;
@@ -221,9 +246,9 @@ inline int Context::AddEvent(Event *e, struct timeval *tv){
         time::TimeAdd(e->peroid, e->deadline, &(e->deadline));
         time_event_list_.insert(e);
     }
-    if(!(e->events&(EVENT_READ|EVENT_WRITE))){
+    if(e->events&(EVENT_READ|EVENT_WRITE)){
         io_event_list_.insert(e);
-        return ebi->AddEvent(e);
+        return res;
     }
     
     
@@ -236,6 +261,9 @@ inline int Context::AddEvent(Event *e, struct timeval *tv){
 }
 
 inline int Context::DelEvent(Event *e){
+    if(e->status!=EventStatus::PENDING||e->status!=EventStatus::ACTIVE){
+        return -1;
+    }
     //先判断是否在timeevent和ioevent当中，若存在，则从中删除，并从epoll中删除
     bool existed=false;;
     if(time_event_list_.count(e)){
@@ -250,7 +278,6 @@ inline int Context::DelEvent(Event *e){
      若存在并删除返回0，否则返回-1；
      */
     if(existed){
-        
         return ebi->DelEvent(e);
     }else{
         return -1;
@@ -259,8 +286,60 @@ inline int Context::DelEvent(Event *e){
     
 }
 
+inline void Context::RunActiveEvents(){
+    for(auto &i:active_event_list_){
+        if(i->status&EventStatus::ACTIVE){
+            i->callback(i->fd);
+            if(i->status&EVENT_PERSIST){
+                i->status=PENDING;
+            }else{
+                time_event_list_.erase(i);
+                io_event_list_ .erase(i);
+                i->status=INIT;
+            }
+        }
+    }
+    active_event_list_.clear();
+}
+
+
+inline void Context::ActivateTimeoutEvents(struct timeval *time){
+    for(;;){
+        if(time_event_list_.size()==0){
+            break;
+        }
+        Event *e=*time_event_list_.begin();
+        if(time::TimeCmp(&(e->deadline), time)<=0){
+            e->status=ACTIVE;
+            time_event_list_.erase(time_event_list_.begin());
+            active_event_list_.push_back(e);
+        }else{
+            break;
+        }
+    }
+}
 inline int Context::Run(){
     
+    while(time_event_list_.size()!=0||io_event_list_.size()!=0){
+        struct timeval now_time;
+        struct timeval wait_time;
+        time::GetTimeOfDay(&now_time);
+        ActivateTimeoutEvents(&now_time);
+        RunActiveEvents();
+        int res;        
+        if(time_event_list_.size()!=0){
+            time::TimeSub((*time_event_list_.begin())->deadline, now_time, &wait_time);
+            res=ebi->dispatch(&wait_time);
+        }else{
+            res=ebi->dispatch(nullptr);
+        }
+        if(res<0){
+            continue;
+        }
+        ActivateTimeoutEvents(&now_time);
+        RunActiveEvents();
+    }
+    return 0;
 }
 
 
