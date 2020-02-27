@@ -87,7 +87,7 @@ class EpollBodyInterface;
 class Context{
     EpollBodyInterface *ebi;
     void RunActiveEvents();
-    void ActivateTimeoutEvents(struct timeval *);
+    size_t ActivateTimeoutEvents(struct timeval *);
 public:
     Context();
 //    超时事件等待列表列表
@@ -303,10 +303,10 @@ inline void Context::RunActiveEvents(){
 }
 
 
-inline void Context::ActivateTimeoutEvents(struct timeval *time){
+inline size_t Context::ActivateTimeoutEvents(struct timeval *time){
     for(;;){
         if(time_event_list_.size()==0){
-            break;
+            return active_event_list_.size();
         }
         Event *e=*time_event_list_.begin();
         if(time::TimeCmp(&(e->deadline), time)<=0){
@@ -314,7 +314,7 @@ inline void Context::ActivateTimeoutEvents(struct timeval *time){
             time_event_list_.erase(time_event_list_.begin());
             active_event_list_.push_back(e);
         }else{
-            break;
+            return active_event_list_.size();
         }
     }
 }
@@ -324,9 +324,11 @@ inline int Context::Run(){
         struct timeval now_time;
         struct timeval wait_time;
         time::GetTimeOfDay(&now_time);
-        ActivateTimeoutEvents(&now_time);
-        RunActiveEvents();
-        int res;        
+        if(ActivateTimeoutEvents(&now_time)>0){
+            RunActiveEvents();
+            continue;
+        }
+        int res;
         if(time_event_list_.size()!=0){
             time::TimeSub((*time_event_list_.begin())->deadline, now_time, &wait_time);
             res=ebi->dispatch(&wait_time);
@@ -336,8 +338,8 @@ inline int Context::Run(){
         if(res<0){
             continue;
         }
-        ActivateTimeoutEvents(&now_time);
-        RunActiveEvents();
+//        ActivateTimeoutEvents(&now_time);
+//        RunActiveEvents();
     }
     return 0;
 }
