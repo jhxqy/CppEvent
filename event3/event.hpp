@@ -80,11 +80,16 @@ struct time_event_cmp{
 };
 
 inline bool time_event_cmp::operator()(const Event *e1, const Event *e2)const{
-    int result=time::TimeCmp(&(e1->deadline), &(e2->deadline));
-    if(result==0){
-        return (e1<e2);
+    if(e1->deadline.tv_sec<e2->deadline.tv_sec){
+        return false;
+    }else if(e1->deadline.tv_sec>e2->deadline.tv_sec){
+        return true;
+    }else if(e1->deadline.tv_usec<e2->deadline.tv_usec){
+        return false;
+    }else if(e1->deadline.tv_usec>e2->deadline.tv_usec){
+        return true;
     }else{
-        return (result<0);
+        return e1<e2;
     }
 }
 
@@ -96,7 +101,7 @@ class Context{
 public:
     Context();
 //    超时事件等待列表列表
-    std::multiset<Event*,time_event_cmp> time_event_list_;
+    std::priority_queue<Event*,std::vector<Event*>,time_event_cmp> time_event_list_;
 //    IO时间等待列表
     std::unordered_set<Event*> io_event_list_;
 //    已激活事件列表
@@ -253,7 +258,7 @@ inline int Context::AddEvent(Event *e, struct timeval *tv){
         e->peroid=*tv;
         time::GetTimeOfDay(&(e->deadline));
         time::TimeAdd(e->peroid, e->deadline, &(e->deadline));
-        time_event_list_.insert(e);
+        time_event_list_.push(e);
     }
     
     return res;
@@ -268,17 +273,14 @@ inline int Context::AddEvent(Event *e, struct timeval *tv){
 }
 
 inline int Context::DelEvent(Event *e){
-    if(e->status!=EventStatus::PENDING||e->status!=EventStatus::ACTIVE){
+    if(e->status!=EventStatus::PENDING&&e->status!=EventStatus::ACTIVE){
         return -1;
     }
     //先判断是否在timeevent和ioevent当中，若存在，则从中删除，并从epoll中删除
+    e->status=EventStatus::INIT;
     bool existed=false;;
-    if(time_event_list_.count(e)){
-        time_event_list_.erase(e);
-        existed=true;
-    }
     if(io_event_list_.count(e)){
-        time_event_list_.erase(e);
+        io_event_list_.erase(e);
         existed=true;
     }
     /*
@@ -294,20 +296,22 @@ inline int Context::DelEvent(Event *e){
 }
 
 inline void Context::RunActiveEvents(){
-    for(auto &i:active_event_list_){
+    for(auto e:active_event_list_){
+        Event *i=e;
         if(i->status&EventStatus::ACTIVE){
-            i->callback(i->fd);
+            i->status=PENDING;
             if(i->events&EVENT_PERSIST){
-                i->status=PENDING;
                 if(i->events&EVENT_TIMEOUT){
                     time::GetTimeOfDay(&(i->deadline));
                     time::TimeAdd(i->deadline, i->peroid, &(i->deadline));
+                    time_event_list_.push(i);
                 }
             }else{
-                time_event_list_.erase(i);
                 io_event_list_ .erase(i);
                 i->status=INIT;
             }
+            i->callback(i->fd);
+
         }
     }
     active_event_list_.clear();
@@ -315,10 +319,21 @@ inline void Context::RunActiveEvents(){
 
 
 inline size_t Context::ActivateTimeoutEvents(struct timeval *time){
-    for(auto e:time_event_list_){
-        if(time::TimeCmp(&(e->deadline), time)<=0){
+    while(true){
+        if(time_event_list_.size()==0){
+            return active_event_list_.size();
+        }
+        Event *e=time_event_list_.top();
+        if(e->status!=PENDING){
+            e->status=INIT;
+            time_event_list_.pop();
+            io_event_list_.erase(e);
+            continue;
+        }
+        if((time::TimeCmp(&(e->deadline), time)<=0)){
             e->status=ACTIVE;
             active_event_list_.push_back(e);
+            time_event_list_.pop();
         }else{
             return active_event_list_.size();
         }
@@ -336,8 +351,11 @@ inline int Context::Run(){
             continue;
         }
         int res;
+        if(time_event_list_.size()==0&&io_event_list_.size()==0){
+            break;
+        }
         if(time_event_list_.size()!=0){
-            time::TimeSub((*time_event_list_.begin())->deadline, now_time, &wait_time);
+            time::TimeSub(time_event_list_.top()->deadline, now_time, &wait_time);
             res=ebi->dispatch(&wait_time);
         }else{
             res=ebi->dispatch(nullptr);

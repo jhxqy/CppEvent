@@ -13,27 +13,44 @@
 #include "event.hpp"
 using namespace std;
 using namespace event;
-int main(){
-    Context ctx;
-    Event *e=new Event(fileno(stdin),EVENT_READ|EVENT_PERSIST,[](evfd_t fd){
+Context ctx;
+
+void doRead(){
+    ctx.AddEvent(new Event(fileno(stdin),EVENT_READ,[](evfd_t fd){
         char buf[1024];
         ssize_t n=read(fd, buf, 1024);
         buf[n]=0;
         cout<<buf;
+        doRead();
+    }), nullptr);
+}
+
+int main(){
+    Event *e=new Event(fileno(stdin),EVENT_READ|EVENT_PERSIST,[](evfd_t fd){
+       
     });
-    Event *e1=new Event(-1,EVENT_TIMEOUT|EVENT_PERSIST,[](evfd_t fd){
+    Event *e2=new Event(-1,EVENT_TIMEOUT|EVENT_PERSIST,[](evfd_t fd){
         cout<<"定时器: 1s"<<endl;
     });
-    
-    struct timeval t;
-    struct timeval t2;
-    t2.tv_sec=1;
-    t2.tv_usec=0;
-    t.tv_sec=5;
-    t.tv_usec=0;
-    cout<<"时间已加入"<<endl;
-    ctx.AddEvent(e1,&t2 );
-    ctx.AddEvent(e,nullptr);
+    Event *e3=new Event(-1,EVENT_TIMEOUT|EVENT_PERSIST,[&e2](evfd_t fd){
+        cout<<"定时器: 3s"<<endl;
+    });
+    Event *e4=new Event(-1,EVENT_TIMEOUT,[&e3](evfd_t fd){
+          cout<<"定时器: 10s"<<endl;
+        ctx.DelEvent(e3);
+
+    });
+    timeval t2;
+    timeval t3;
+    timeval t4;
+    time::InitTime(&t2, 1, 0);
+    time::InitTime(&t3, 3, 0);
+    time::InitTime(&t4, 10,0);
+    ctx.AddEvent(e2, &t2);
+    ctx.AddEvent(e3, &t3);
+    ctx.AddEvent(e4, &t4);
+  // ctx.AddEvent(e,nullptr);
+    doRead();
     ctx.Run();
-    
+   
 }

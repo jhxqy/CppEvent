@@ -60,6 +60,13 @@ inline void Timespec2Timeval(const struct timespec &from,struct timeval *to){
     to->tv_usec=int(from.tv_nsec/1000);
 }
 
+inline void InitTime(struct timeval *tv,long sec,long usec){
+    if(tv==nullptr){
+        return ;
+    }
+    tv->tv_sec=sec;
+    tv->tv_usec=usec;
+}
 
 }
 }
