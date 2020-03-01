@@ -14,15 +14,17 @@
 using namespace std;
 using namespace event;
 Context ctx;
-
+void doRead();
+Event *e=  new Event(fileno(stdin),EVENT_READ,[](evfd_t fd){
+    char buf[1024];
+    ssize_t n=read(fd, buf, 1024);
+    buf[n]=0;
+    cout<<buf;
+    doRead();
+});
 void doRead(){
-    ctx.AddEvent(new Event(fileno(stdin),EVENT_READ,[](evfd_t fd){
-        char buf[1024];
-        ssize_t n=read(fd, buf, 1024);
-        buf[n]=0;
-        cout<<buf;
-        doRead();
-    }), nullptr);
+    
+    ctx.AddEvent(e,nullptr);
 }
 
 int main(){
@@ -46,9 +48,9 @@ int main(){
     time::InitTime(&t2, 1, 0);
     time::InitTime(&t3, 3, 0);
     time::InitTime(&t4, 10,0);
-    ctx.AddEvent(e2, &t2);
-    ctx.AddEvent(e3, &t3);
-    ctx.AddEvent(e4, &t4);
+//    ctx.AddEvent(e2, &t2);
+//    ctx.AddEvent(e3, &t3);
+//    ctx.AddEvent(e4, &t4);
   // ctx.AddEvent(e,nullptr);
     doRead();
     ctx.Run();

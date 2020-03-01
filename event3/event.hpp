@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <queue>
 #include <vector>
+#include <sys/socket.h>
 #ifdef __APPLE__
 #include <sys/event.h>
 #include <sys/types.h>
@@ -48,6 +49,7 @@ enum EventType{
     EventTypeMap(XX)
 #undef XX
 };
+
 
 enum EventStatus{
 #define XX(name,id)                        \
@@ -75,6 +77,7 @@ struct Event{
     
 };
 
+
 struct time_event_cmp{
     bool operator()(const Event *e1,const Event *e2)const;
 };
@@ -89,7 +92,7 @@ inline bool time_event_cmp::operator()(const Event *e1, const Event *e2)const{
     }else if(e1->deadline.tv_usec>e2->deadline.tv_usec){
         return true;
     }else{
-        return e1<e2;
+        return (e1<e2);
     }
 }
 
@@ -112,12 +115,15 @@ public:
     int DelEvent(Event *e);
     int Run();
 };
+        
 
 class SignalManager{
 public:
+    bool happen;
     evfd_t sockpair[2];
+    std::list<Event *> signal_event_list[100];
     SignalManager(){
-        if (pipe(sockpair)){
+        if (pipe(sockpair)){ 
             throw std::runtime_error("signal manager创建管道失败:"+std::string(strerror(errno)));
         }
         /**
@@ -126,8 +132,18 @@ public:
          */
     }
     Event *GetSignalEvent(){
-        static Event e;
-        return &e;
+        static Event *e;
+        if(e==nullptr){
+            e=new Event(sockpair[0],EVENT_SIGNAL|EVENT_READ|EVENT_PERSIST,[](evfd_t fd){
+                static char signals[1];
+                ssize_t n;
+                n=recv(fd,signals,sizeof(signals),0);
+                if(n==-1){
+                    fprintf(stderr, "error:%s\n",strerror(errno));
+                }
+            });
+        }
+        return e;
     }
     ~SignalManager(){
         close(sockpair[0]);
@@ -199,7 +215,7 @@ public:
         }
         int res=kevent(kq,nullptr,0,buf,BUF_MAXN,wait_time);
         if(res<0){
-            std::cerr<<strerror(errno)<<std::endl;
+          //  std::cerr<<strerror(errno)<<std::endl;
             return -1;
         }
         if(res==0){
@@ -224,6 +240,7 @@ public:
 
 #endif
 
+    
 
 /* object function imple*/
 
@@ -264,6 +281,7 @@ inline int Context::AddEvent(Event *e, struct timeval *tv){
     return res;
 
     
+    
     /**
     TODO:
      信号部分
@@ -287,10 +305,13 @@ inline int Context::DelEvent(Event *e){
      若存在并删除返回0，否则返回-1；
      */
     if(existed){
-        return ebi->DelEvent(e);
+        return (ebi->DelEvent(e));
     }else{
-        return -1;
+        return (-1);
     }
+    
+    
+    
     
     
 }
@@ -361,10 +382,20 @@ inline int Context::Run(){
             res=ebi->dispatch(nullptr);
         }
         if(res<0){
+            if(errno==EINTR){
+                /*
+                TODO:
+                处理信号
+                */
+            }
+            
             continue;
+        }else if(true){
+            /*
+            TODO:
+            处理信号
+            */
         }
-//        ActivateTimeoutEvents(&now_time);
-//        RunActiveEvents();
     }
     return 0;
 }
