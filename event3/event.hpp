@@ -125,13 +125,17 @@ public:
     bool happen_;
     evfd_t sockpair_[2];
     bool added_;
-    std::list<Event *> signal_event_list_[100];
+    std::list<Event *> signal_event_list_[NSIG];
     using SigCallBackType=void(*)(int);
-    SigCallBackType old_sig_callbacks_[100];
-    int signal_count_[100];
+    SigCallBackType old_sig_callbacks_[NSIG];
+    int signal_count_[NSIG];
+    int event_cnt;
     static SignalManager * Instance(){
         static SignalManager sm;
         return &sm;
+    }
+    void CheckSignals(){
+        
     }
     SignalManager(){
         if(sockpair_[0]==-1||sockpair_[1]==-1){
@@ -140,8 +144,8 @@ public:
             }
         }
         happen_=false;
-        
-        for(int i=0;i<100;i++){
+        event_cnt=0;
+        for(int i=0;i<NSIG;i++){
             old_sig_callbacks_[i]=nullptr;
         }
         if(signal_manager_main==nullptr){
@@ -180,8 +184,9 @@ public:
                 SignalManager::signal_manager_main->signal_count_[SIG]++;
                 SignalManager::signal_manager_main->happen_=true;
             });
-            
         }
+        event_cnt++;
+        
     }
     ~SignalManager(){
         close(sockpair_[0]);
@@ -436,21 +441,10 @@ inline int Context::Run(){
             res=ebi->dispatch(nullptr);
         }
         if(res<0){
-            if(errno==EINTR){
-                /*
-                TODO:
-                处理信号
-                */
-            }
-            
-            continue;
-        }else if(true){
-            /*
-            TODO:
-            处理信号
-            */
+            return res;
         }
     }
+    
     return 0;
 }
 
