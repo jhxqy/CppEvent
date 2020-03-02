@@ -119,12 +119,25 @@ public:
 
 class SignalManager{
 public:
-    bool happen;
-    evfd_t sockpair[2];
-    std::list<Event *> signal_event_list[100];
+    static SignalManager *signal_manger_main;
+    bool happen_;
+    evfd_t sockpair_[2];
+    bool added_;
+    std::list<Event *> signal_event_list_[100];
+    using SigCallBackType=void(*)(int);
+    SigCallBackType old_sig_callbacks_[100];
     SignalManager(){
-        if (pipe(sockpair)){ 
-            throw std::runtime_error("signal manager创建管道失败:"+std::string(strerror(errno)));
+        if(sockpair_[0]==-1||sockpair_[1]==-1){
+            if (pipe(sockpair_)){
+                throw std::runtime_error("signal manager创建管道失败:"+std::string(strerror(errno)));
+            }
+        }
+        
+        for(int i=0;i<100;i++){
+            old_sig_callbacks_[i]=nullptr;
+        }
+        if(signal_manger_main==nullptr){
+            signal_manger_main=this;
         }
         /**
          sockpair[0] 用于读
@@ -134,7 +147,7 @@ public:
     Event *GetSignalEvent(){
         static Event *e;
         if(e==nullptr){
-            e=new Event(sockpair[0],EVENT_SIGNAL|EVENT_READ|EVENT_PERSIST,[](evfd_t fd){
+            e=new Event(sockpair_[0],EVENT_SIGNAL|EVENT_READ|EVENT_PERSIST,[](evfd_t fd){
                 static char signals[1];
                 ssize_t n;
                 n=recv(fd,signals,sizeof(signals),0);
@@ -145,13 +158,22 @@ public:
         }
         return e;
     }
+    void AddSignal(Event *e){
+        if(e->events&EVENT_SIGNAL){
+            signal_event_list_[e->fd].push_back(e);
+        }
+        if(old_sig_callbacks_[e->fd]==nullptr){
+            old_sig_callbacks_[e->fd]=signal(e->fd, [](int SIG){
+                //这里是signal事件。
+            });
+        }
+    }
     ~SignalManager(){
-        close(sockpair[0]);
-        close(sockpair[1]);
+        close(sockpair_[0]);
+        close(sockpair_[1]);
     }
 };
-
-
+inline SignalManager* SignalManager::signal_manger_main=nullptr;
 class EpollBodyInterface{
 public:
 
@@ -203,6 +225,23 @@ public:
         return 0;
     }
     int DelEvent(Event  *e)override{
+        struct kevent ee;
+        memset(&ee, 0, sizeof(ee));
+        int ev_filter=0;
+        if(e->events&EventType::EVENT_READ){
+            ev_filter|=EVFILT_READ;
+        }
+        if(e->events&EventType::EVENT_WRITE){
+            ev_filter|=EVFILT_WRITE;
+        }
+        int flags=0;
+        flags|=EV_DELETE;
+        EV_SET(&ee,e->fd,ev_filter,flags,0,0,e);
+        int res=kevent(kq, &ee, 1, nullptr, 0, nullptr);
+        if(res==-1||ee.flags&EV_ERROR){
+            return -1;
+        }
+        
         return 0;
     }
     int dispatch(struct timeval *val) override{
