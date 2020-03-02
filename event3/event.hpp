@@ -95,12 +95,14 @@ inline bool time_event_cmp::operator()(const Event *e1, const Event *e2)const{
         return (e1<e2);
     }
 }
-
+class SignalManager;
 class EpollBodyInterface;
 class Context{
     EpollBodyInterface *ebi;
     void RunActiveEvents();
     size_t ActivateTimeoutEvents(struct timeval *);
+    
+    SignalManager *signal_manager;
 public:
     Context();
 //    超时事件等待列表列表
@@ -119,25 +121,31 @@ public:
 
 class SignalManager{
 public:
-    static SignalManager *signal_manger_main;
+    static SignalManager *signal_manager_main;
     bool happen_;
     evfd_t sockpair_[2];
     bool added_;
     std::list<Event *> signal_event_list_[100];
     using SigCallBackType=void(*)(int);
     SigCallBackType old_sig_callbacks_[100];
+    int signal_count_[100];
+    static SignalManager * Instance(){
+        static SignalManager sm;
+        return &sm;
+    }
     SignalManager(){
         if(sockpair_[0]==-1||sockpair_[1]==-1){
             if (pipe(sockpair_)){
                 throw std::runtime_error("signal manager创建管道失败:"+std::string(strerror(errno)));
             }
         }
+        happen_=false;
         
         for(int i=0;i<100;i++){
             old_sig_callbacks_[i]=nullptr;
         }
-        if(signal_manger_main==nullptr){
-            signal_manger_main=this;
+        if(signal_manager_main==nullptr){
+            signal_manager_main=this;
         }
         /**
          sockpair[0] 用于读
@@ -165,7 +173,14 @@ public:
         if(old_sig_callbacks_[e->fd]==nullptr){
             old_sig_callbacks_[e->fd]=signal(e->fd, [](int SIG){
                 //这里是signal事件。
+                if(SignalManager::signal_manager_main==nullptr){
+                    fprintf(stderr, "error: received signal:%d,but signal_manger_main is nullptr!",SIG);
+                    return ;
+                }
+                SignalManager::signal_manager_main->signal_count_[SIG]++;
+                SignalManager::signal_manager_main->happen_=true;
             });
+            
         }
     }
     ~SignalManager(){
@@ -173,7 +188,7 @@ public:
         close(sockpair_[1]);
     }
 };
-inline SignalManager* SignalManager::signal_manger_main=nullptr;
+inline SignalManager* SignalManager::signal_manager_main=nullptr;
 class EpollBodyInterface{
 public:
 
@@ -286,7 +301,7 @@ public:
 
 inline Context::Context(){
     ebi=new KqueueImple(this);
-    
+    signal_manager=SignalManager::Instance();
 }
 inline Context::~Context(){
     if(ebi!=nullptr){
